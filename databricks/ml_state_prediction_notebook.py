@@ -1,6 +1,7 @@
 import argparse
 import mlflow
 import pandas as pd
+from pyspark.sql import functions as F, Window as W
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
@@ -37,61 +38,31 @@ spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
 mlflow.set_experiment(experiment_name)
 artifact_path = "fault_prediction_pipeline_model"
 
-feature_cols_num = ["vibration_mm_s", "temp_c", "throughput_cpm"]
+feature_cols_num = ["vibration_mm_s", "temp_c", "throughput_cpm", "rpm", "current_amps", "humidity_pct"]
 feature_cols_cat = ["state"]
 feature_cols_all = feature_cols_num + feature_cols_cat
-optional_numeric_defaults = {
-    "load_pct": 0.0,
-    "rpm": 0.0,
-    "humidity_rh": 50.0,
-}
 
-preprocess = ColumnTransformer(
-    transformers=[
-        (
-            "num",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    ("scaler", StandardScaler()),
-                ]
-            ),
-            feature_cols_num,
-        ),
-        (
-            "cat",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="most_frequent")),
-                    ("onehot", OneHotEncoder(handle_unknown="ignore")),
-                ]
-            ),
-            feature_cols_cat,
-        ),
-    ]
-)
+_SELECT_COLS = ["machine_id", "event_time"] + feature_cols_all + ["fault_code"]
 
-clf = Pipeline(
-    steps=[
-        ("preprocess", preprocess),
-        ("model", LogisticRegression(max_iter=1000, class_weight="balanced")),
-    ]
-)
+HORIZON_SECONDS = 300
 
 
-def _to_labeled_pdf(in_pdf: pd.DataFrame, steps_ahead: int = 300) -> pd.DataFrame:
-    if in_pdf.empty:
-        return in_pdf
-    out_pdf = in_pdf.sort_values(["machine_id", "event_time"]).reset_index(drop=True).copy()
-    labels = []
-    for _, grp in out_pdf.groupby("machine_id", sort=False):
-        future_fault = ((grp["state"] == "FAULT") | grp["fault_code"].notna()).astype(int).rolling(
-            window=steps_ahead, min_periods=1
-        ).max()
-        shifted = future_fault.shift(-steps_ahead).fillna(0).astype(int)
-        labels.extend(shifted.tolist())
-    out_pdf["label_fault_next_5m"] = labels
-    return out_pdf
+def _build_labeled_spark_df(source_df):
+    """Label rows with whether a FAULT occurs within the next 5 minutes using Spark window functions."""
+    w_future = (
+        W.partitionBy("machine_id")
+        .orderBy(F.col("event_time").cast("long"))
+        .rangeBetween(1, HORIZON_SECONDS)
+    )
+    is_fault_flag = F.when(
+        (F.col("state") == "FAULT") | F.col("fault_code").isNotNull(), F.lit(1)
+    ).otherwise(F.lit(0))
+
+    labeled = source_df.withColumn(
+        "label_fault_next_5m",
+        F.when(F.max(is_fault_flag).over(w_future) >= 1, F.lit(1)).otherwise(F.lit(0)),
+    )
+    return labeled
 
 
 def _latest_training_run_model_uri() -> str:
@@ -108,63 +79,6 @@ def _latest_training_run_model_uri() -> str:
         raise ValueError("No prior fault training run found. Run once with --train-model true.")
     run_id = runs.iloc[0]["run_id"]
     return f"runs:/{run_id}/{artifact_path}"
-
-
-def _score_pdf(in_pdf: pd.DataFrame, model: Pipeline) -> pd.DataFrame:
-    if in_pdf.empty:
-        return in_pdf
-    for col_name, default_value in optional_numeric_defaults.items():
-        if col_name not in in_pdf.columns:
-            in_pdf[col_name] = default_value
-    score_pdf = in_pdf.dropna(subset=feature_cols_all).copy()
-    if score_pdf.empty:
-        return score_pdf
-    probs = model.predict_proba(score_pdf[feature_cols_all])[:, 1].astype(float)
-    score_pdf["prob_fault_next_5m"] = probs
-    score_pdf["predicted_fault_next_5m"] = score_pdf["prob_fault_next_5m"] >= 0.5
-    return score_pdf
-
-
-def _ensure_output_tables() -> None:
-    spark.sql(
-        f"""
-        CREATE TABLE IF NOT EXISTS {history_table} (
-          machine_id STRING,
-          event_time TIMESTAMP,
-          prob_fault_next_5m DOUBLE,
-          predicted_fault_next_5m BOOLEAN,
-          inference_type STRING,
-          model_run_id STRING,
-          scored_at TIMESTAMP
-        )
-        """
-    )
-    spark.sql(
-        f"""
-        CREATE TABLE IF NOT EXISTS {output_table} (
-          machine_id STRING,
-          event_time TIMESTAMP,
-          prob_fault_next_5m DOUBLE,
-          predicted_fault_next_5m BOOLEAN,
-          inference_type STRING,
-          model_run_id STRING,
-          scored_at TIMESTAMP
-        )
-        """
-    )
-
-
-def _merge_latest_scores(result_df) -> None:
-    result_df.createOrReplaceTempView("tmp_ml_fault_predictions_latest")
-    spark.sql(
-        f"""
-        MERGE INTO {output_table} AS tgt
-        USING tmp_ml_fault_predictions_latest AS src
-          ON tgt.machine_id = src.machine_id
-        WHEN MATCHED THEN UPDATE SET *
-        WHEN NOT MATCHED THEN INSERT *
-        """
-    )
 
 
 with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
@@ -187,36 +101,32 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
     )
 
     if train_model:
-        training_columns = [
-            "machine_id",
-            "event_time",
-            "vibration_mm_s",
-            "temp_c",
-            "throughput_cpm",
-            "state",
-            "fault_code",
-        ]
-        existing_cols = set(spark.table(silver_table).columns)
-        for col_name in optional_numeric_defaults:
-            if col_name in existing_cols:
-                training_columns.append(col_name)
-        training_pdf = (
+        training_sdf = (
             spark.table(silver_table)
             .where("event_time >= current_timestamp() - INTERVAL 7 DAYS")
-            .select(*training_columns)
+            .select(*_SELECT_COLS)
             .dropna(subset=["machine_id", "event_time"])
-            .toPandas()
         )
-        if training_pdf.empty:
+        if training_sdf.count() == 0:
             raise ValueError("No telemetry found in silver table for fault prediction training.")
-        train_df = _to_labeled_pdf(training_pdf)
-        train_df = train_df.dropna(subset=feature_cols_all)
+
+        labeled_sdf = _build_labeled_spark_df(training_sdf)
+        train_df = labeled_sdf.dropna(subset=feature_cols_all).toPandas()
         if train_df.empty:
             raise ValueError("No rows available for fault model training after preprocessing.")
         if train_df["label_fault_next_5m"].nunique() < 2:
             train_df.loc[train_df.index[: max(1, len(train_df) // 20)], "label_fault_next_5m"] = 1
+
         X = train_df[feature_cols_all]
         y = train_df["label_fault_next_5m"].astype(int)
+
+        preprocess = ColumnTransformer(
+            transformers=[
+                ("num", Pipeline([("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())]), feature_cols_num),
+                ("cat", Pipeline([("imputer", SimpleImputer(strategy="most_frequent")), ("onehot", OneHotEncoder(handle_unknown="ignore"))]), feature_cols_cat),
+            ]
+        )
+        clf = Pipeline([("preprocess", preprocess), ("model", LogisticRegression(max_iter=1000, class_weight="balanced"))])
 
         with mlflow.start_run(run_name="iot_fault_training", nested=True) as train_run:
             mlflow.set_tags({"task": "fault_training"})
@@ -229,118 +139,92 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
                     "numeric_features": ",".join(feature_cols_num),
                     "categorical_features": ",".join(feature_cols_cat),
                     "model_type": "logistic_regression",
-                    "horizon_rows": 300,
+                    "horizon_seconds": HORIZON_SECONDS,
                     "train_rows": int(len(train_df)),
                 }
             )
             mlflow.log_metrics({"roc_auc_train": auc, "avg_precision_train": ap})
             mlflow.sklearn.log_model(clf, artifact_path=artifact_path)
-            model = clf
             model_run_id = train_run.info.run_id
+            model_uri = f"runs:/{model_run_id}/{artifact_path}"
     else:
         model_uri = _latest_training_run_model_uri()
-        model = mlflow.sklearn.load_model(model_uri)
         model_run_id = model_uri.split("/")[1]
 
+    predict_udf = mlflow.pyfunc.spark_udf(spark, model_uri, result_type="double")
+
     scored_segments = []
-    _ensure_output_tables()
     requested_modes = ["batch", "realtime"] if inference_mode == "both" else [inference_mode]
 
     for mode in requested_modes:
-        source_columns = [
-            "machine_id",
-            "event_time",
-            "vibration_mm_s",
-            "temp_c",
-            "throughput_cpm",
-            "state",
-            "fault_code",
-        ]
-        existing_cols = set(spark.table(silver_table).columns)
-        for col_name in optional_numeric_defaults:
-            if col_name in existing_cols:
-                source_columns.append(col_name)
         if mode == "batch":
-            source_pdf = (
+            source_sdf = (
                 spark.table(silver_table)
                 .where(f"event_time >= current_timestamp() - INTERVAL {batch_lookback_hours} HOURS")
-                .select(*source_columns)
+                .select(*_SELECT_COLS)
                 .dropna(subset=["machine_id", "event_time"])
-                .toPandas()
             )
         else:
-            source_pdf = (
+            source_sdf = (
                 spark.table(silver_table)
                 .where(f"event_time >= current_timestamp() - INTERVAL {realtime_lookback_minutes} MINUTES")
-                .select(*source_columns)
+                .select(*_SELECT_COLS)
                 .dropna(subset=["machine_id", "event_time"])
-                .toPandas()
             )
-        if source_pdf.empty:
+
+        row_count = source_sdf.count()
+        if row_count == 0:
             continue
 
-        scored_pdf = _score_pdf(source_pdf, model)
-        if scored_pdf.empty:
-            continue
-        scored_pdf["inference_type"] = mode
-        scored_pdf["model_run_id"] = model_run_id
-        scored_segments.append(scored_pdf)
+        scored_df = (
+            source_sdf
+            .withColumn("prob_fault_next_5m", predict_udf(*[F.col(c) for c in feature_cols_all]))
+            .withColumn("predicted_fault_next_5m", F.col("prob_fault_next_5m") >= 0.5)
+            .withColumn("inference_type", F.lit(mode))
+            .withColumn("model_run_id", F.lit(model_run_id))
+            .withColumn("scored_at", F.current_timestamp())
+            .select(
+                "machine_id", "event_time", "prob_fault_next_5m",
+                "predicted_fault_next_5m", "inference_type", "model_run_id", "scored_at",
+            )
+        )
+
+        scored_df.write.mode("append").format("delta").saveAsTable(history_table)
 
         with mlflow.start_run(run_name=f"iot_fault_inference_{mode}", nested=True):
             mlflow.set_tags({"task": "fault_inference", "inference_type": mode})
-            mlflow.log_params({"inference_type": mode, "rows_scored": int(len(scored_pdf))})
+            stats = scored_df.agg(
+                F.avg("prob_fault_next_5m").alias("mean_prob"),
+                F.avg(F.col("predicted_fault_next_5m").cast("double")).alias("high_risk_rate"),
+            ).first()
+            mlflow.log_params({"inference_type": mode, "rows_scored": row_count})
             mlflow.log_metrics(
                 {
-                    "high_risk_rate": float(scored_pdf["predicted_fault_next_5m"].mean()),
-                    "mean_fault_probability": float(scored_pdf["prob_fault_next_5m"].mean()),
+                    "high_risk_rate": float(stats["high_risk_rate"] or 0),
+                    "mean_fault_probability": float(stats["mean_prob"] or 0),
                 }
             )
+        scored_segments.append(mode)
 
     if not scored_segments:
         mlflow.log_metrics({"rows_scored_total": 0.0, "machines_scored": 0.0})
         print("No rows available for fault inference in selected mode(s); skipping table updates.")
     else:
-        combined_pdf = pd.concat(scored_segments, ignore_index=True)
-        combined_pdf["scored_at"] = pd.Timestamp.utcnow()
-
-        history_df = spark.createDataFrame(
-            combined_pdf[
-                [
-                    "machine_id",
-                    "event_time",
-                    "prob_fault_next_5m",
-                    "predicted_fault_next_5m",
-                    "inference_type",
-                    "model_run_id",
-                    "scored_at",
-                ]
-            ]
+        w = W.partitionBy("machine_id").orderBy(F.desc("event_time"))
+        latest_df = (
+            spark.table(history_table)
+            .withColumn("_rn", F.row_number().over(w))
+            .where("_rn = 1")
+            .drop("_rn")
         )
-        history_df.write.mode("append").format("delta").saveAsTable(history_table)
-
-        latest_pdf = (
-            combined_pdf.sort_values(["machine_id", "event_time"])
-            .groupby("machine_id", as_index=False)
-            .tail(1)
+        (
+            latest_df.write.mode("overwrite")
+            .option("overwriteSchema", "true")
+            .format("delta")
+            .saveAsTable(output_table)
         )
-        result_df = spark.createDataFrame(
-            latest_pdf[
-                [
-                    "machine_id",
-                    "event_time",
-                    "prob_fault_next_5m",
-                    "predicted_fault_next_5m",
-                    "inference_type",
-                    "model_run_id",
-                    "scored_at",
-                ]
-            ]
-        )
-        _merge_latest_scores(result_df)
-
+        total_count = latest_df.count()
+        machine_count = latest_df.select("machine_id").distinct().count()
         mlflow.log_metrics(
-            {
-                "rows_scored_total": float(len(combined_pdf)),
-                "machines_scored": float(combined_pdf["machine_id"].nunique()),
-            }
+            {"rows_scored_total": float(total_count), "machines_scored": float(machine_count)}
         )

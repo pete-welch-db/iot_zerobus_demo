@@ -1,45 +1,31 @@
 {
   "datasets": [
     {
-      "name": "ds_filter_machine",
-      "displayName": "Filter Machine",
-      "queryLines": [
-        "SELECT DISTINCT machine_id FROM welch.iot_demo_dev.vw_machine_current_status ORDER BY machine_id"
-      ]
-    },
-    {
-      "name": "ds_filter_state",
-      "displayName": "Filter State",
-      "queryLines": [
-        "SELECT DISTINCT state FROM welch.iot_demo_dev.vw_machine_telemetry_live ORDER BY state"
-      ]
-    },
-    {
       "name": "ds_live_telemetry",
       "displayName": "Live Telemetry",
       "queryLines": [
-        "SELECT event_time, machine_id, state, temp_c, vibration_mm_s, throughput_cpm FROM welch.iot_demo_dev.vw_machine_telemetry_live"
+        "SELECT event_time, machine_id, state, temp_c, vibration_mm_s, throughput_cpm, rpm, current_amps, humidity_pct FROM welch.iot_demo_dev.vw_machine_telemetry_live"
       ]
     },
     {
       "name": "ds_health_window",
       "displayName": "Health by Window",
       "queryLines": [
-        "SELECT machine_id, window_end, oee_pct, availability_pct, performance_pct, quality_pct, anomaly_score, prob_fault_next_5m FROM welch.iot_demo_dev.vw_machine_health"
+        "SELECT machine_id, window_end, oee_pct, availability_pct, performance_pct, quality_pct, anomaly_score, prob_fault_next_5m, avg_rpm, avg_current_amps, avg_humidity_pct, time_in_run_s, time_in_stopped_s, time_in_fault_s FROM welch.iot_demo_dev.vw_machine_health"
       ]
     },
     {
       "name": "ds_current_status",
       "displayName": "Current Status",
       "queryLines": [
-        "SELECT machine_id, state, last_event_time, oee_pct, anomaly_score, prob_fault_next_5m, throughput_cpm, temp_c, vibration_mm_s, rpm, load_pct, power_kw, current_a, telemetry_lag_seconds, ml_lag_seconds FROM welch.iot_demo_dev.vw_machine_current_status"
+        "SELECT machine_id, state, last_event_time, oee_pct, anomaly_score, prob_fault_next_5m, throughput_cpm, temp_c, vibration_mm_s, rpm, current_amps, humidity_pct, telemetry_lag_seconds, ml_lag_seconds FROM welch.iot_demo_dev.vw_machine_current_status"
       ]
     },
     {
       "name": "ds_device_health_latency",
       "displayName": "Device Health + Latency",
       "queryLines": [
-        "SELECT s.machine_id, d.line_name, s.state, s.last_event_time, s.telemetry_lag_seconds, s.ml_lag_seconds, s.temp_c, s.vibration_mm_s, s.throughput_cpm, s.rpm, s.load_pct, s.power_kw, s.current_a, s.pressure_bar, s.anomaly_score, s.prob_fault_next_5m, CASE WHEN s.prob_fault_next_5m >= 0.7 THEN 'HIGH' WHEN s.prob_fault_next_5m >= 0.4 THEN 'MEDIUM' ELSE 'LOW' END AS fault_band FROM welch.iot_demo_dev.vw_machine_current_status s LEFT JOIN welch.iot_demo_dev.dim_machine d ON s.machine_id = d.machine_id"
+        "SELECT s.machine_id, d.line_name, s.state, s.last_event_time, s.telemetry_lag_seconds, s.ml_lag_seconds, s.temp_c, s.vibration_mm_s, s.throughput_cpm, s.rpm, s.current_amps, s.humidity_pct, s.anomaly_score, s.prob_fault_next_5m, CASE WHEN s.prob_fault_next_5m >= 0.7 THEN 'HIGH' WHEN s.prob_fault_next_5m >= 0.4 THEN 'MEDIUM' ELSE 'LOW' END AS fault_band FROM welch.iot_demo_dev.vw_machine_current_status s LEFT JOIN welch.iot_demo_dev.dim_machine d ON s.machine_id = d.machine_id"
       ]
     },
     {
@@ -47,13 +33,6 @@
       "displayName": "Downtime by Window",
       "queryLines": [
         "SELECT machine_id, window_end, (time_in_stopped_s + time_in_fault_s) AS downtime_s FROM welch.iot_demo_dev.vw_machine_health"
-      ]
-    },
-    {
-      "name": "ds_slo_summary",
-      "displayName": "SLO Summary",
-      "queryLines": [
-        "SELECT machine_count, pct_within_telemetry_slo, pct_within_ml_slo, max_telemetry_lag_seconds, max_ml_lag_seconds FROM welch.iot_demo_dev.vw_machine_slo_status"
       ]
     }
   ],
@@ -742,26 +721,6 @@
                       "expression": "`throughput_cpm`"
                     },
                     {
-                      "name": "rpm",
-                      "expression": "`rpm`"
-                    },
-                    {
-                      "name": "load_pct",
-                      "expression": "`load_pct`"
-                    },
-                    {
-                      "name": "power_kw",
-                      "expression": "`power_kw`"
-                    },
-                    {
-                      "name": "current_a",
-                      "expression": "`current_a`"
-                    },
-                    {
-                      "name": "pressure_bar",
-                      "expression": "`pressure_bar`"
-                    },
-                    {
                       "name": "last_event_time",
                       "expression": "`last_event_time`"
                     }
@@ -824,20 +783,8 @@
                     "displayName": "RPM"
                   },
                   {
-                    "fieldName": "load_pct",
-                    "displayName": "Load %"
-                  },
-                  {
-                    "fieldName": "power_kw",
-                    "displayName": "Power (kW)"
-                  },
-                  {
-                    "fieldName": "current_a",
+                    "fieldName": "current_amps",
                     "displayName": "Current (A)"
-                  },
-                  {
-                    "fieldName": "pressure_bar",
-                    "displayName": "Pressure (bar)"
                   },
                   {
                     "fieldName": "last_event_time",
@@ -860,33 +807,16 @@
         },
         {
           "widget": {
-            "name": "slo_benchmark_table",
+            "name": "rpm_trend",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_slo_summary",
+                  "datasetName": "ds_live_telemetry",
                   "fields": [
-                    {
-                      "name": "machine_count",
-                      "expression": "`machine_count`"
-                    },
-                    {
-                      "name": "pct_within_telemetry_slo",
-                      "expression": "`pct_within_telemetry_slo`"
-                    },
-                    {
-                      "name": "pct_within_ml_slo",
-                      "expression": "`pct_within_ml_slo`"
-                    },
-                    {
-                      "name": "max_telemetry_lag_seconds",
-                      "expression": "`max_telemetry_lag_seconds`"
-                    },
-                    {
-                      "name": "max_ml_lag_seconds",
-                      "expression": "`max_ml_lag_seconds`"
-                    }
+                    { "name": "event_time", "expression": "`event_time`" },
+                    { "name": "machine_id", "expression": "`machine_id`" },
+                    { "name": "rpm", "expression": "`rpm`" }
                   ],
                   "disaggregated": true
                 }
@@ -894,43 +824,180 @@
             ],
             "spec": {
               "version": 3,
-              "widgetType": "table",
+              "widgetType": "line",
               "encodings": {
-                "columns": [
-                  {
-                    "fieldName": "machine_count",
-                    "displayName": "Machine Count"
-                  },
-                  {
-                    "fieldName": "pct_within_telemetry_slo",
-                    "displayName": "% Within Telemetry SLO"
-                  },
-                  {
-                    "fieldName": "pct_within_ml_slo",
-                    "displayName": "% Within ML SLO"
-                  },
-                  {
-                    "fieldName": "max_telemetry_lag_seconds",
-                    "displayName": "Max Telemetry Lag (s)"
-                  },
-                  {
-                    "fieldName": "max_ml_lag_seconds",
-                    "displayName": "Max ML Lag (s)"
-                  }
-                ]
+                "x": { "fieldName": "event_time", "displayName": "Time", "scale": { "type": "temporal" } },
+                "y": { "fieldName": "rpm", "displayName": "RPM", "scale": { "type": "quantitative" } },
+                "color": { "fieldName": "machine_id", "displayName": "Machine", "scale": { "type": "categorical" } }
               },
-              "frame": {
-                "showTitle": true,
-                "title": "SLO Benchmark Summary"
-              }
+              "frame": { "showTitle": true, "title": "RPM Trend" }
             }
           },
-          "position": {
-            "x": 0,
-            "y": 16,
-            "width": 12,
-            "height": 3
-          }
+          "position": { "x": 0, "y": 16, "width": 4, "height": 3 }
+        },
+        {
+          "widget": {
+            "name": "current_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    { "name": "event_time", "expression": "`event_time`" },
+                    { "name": "machine_id", "expression": "`machine_id`" },
+                    { "name": "current_amps", "expression": "`current_amps`" }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": { "fieldName": "event_time", "displayName": "Time", "scale": { "type": "temporal" } },
+                "y": { "fieldName": "current_amps", "displayName": "Current (A)", "scale": { "type": "quantitative" } },
+                "color": { "fieldName": "machine_id", "displayName": "Machine", "scale": { "type": "categorical" } }
+              },
+              "frame": { "showTitle": true, "title": "Motor Current Trend" }
+            }
+          },
+          "position": { "x": 4, "y": 16, "width": 4, "height": 3 }
+        },
+        {
+          "widget": {
+            "name": "humidity_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    { "name": "event_time", "expression": "`event_time`" },
+                    { "name": "machine_id", "expression": "`machine_id`" },
+                    { "name": "humidity_pct", "expression": "`humidity_pct`" }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": { "fieldName": "event_time", "displayName": "Time", "scale": { "type": "temporal" } },
+                "y": { "fieldName": "humidity_pct", "displayName": "Humidity %", "scale": { "type": "quantitative" } },
+                "color": { "fieldName": "machine_id", "displayName": "Machine", "scale": { "type": "categorical" } }
+              },
+              "frame": { "showTitle": true, "title": "Humidity Trend" }
+            }
+          },
+          "position": { "x": 8, "y": 16, "width": 4, "height": 3 }
+        },
+        {
+          "widget": {
+            "name": "kpi_telemetry_lag",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    { "name": "avg_lag", "expression": "AVG(`telemetry_lag_seconds`)" }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": { "fieldName": "avg_lag", "displayName": "seconds" }
+              },
+              "frame": { "showTitle": true, "title": "Avg Telemetry Lag" }
+            }
+          },
+          "position": { "x": 0, "y": 19, "width": 3, "height": 2 }
+        },
+        {
+          "widget": {
+            "name": "kpi_ml_lag",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    { "name": "avg_ml_lag", "expression": "AVG(`ml_lag_seconds`)" }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": { "fieldName": "avg_ml_lag", "displayName": "seconds" }
+              },
+              "frame": { "showTitle": true, "title": "Avg ML Scoring Lag" }
+            }
+          },
+          "position": { "x": 3, "y": 19, "width": 3, "height": 2 }
+        },
+        {
+          "widget": {
+            "name": "kpi_avg_rpm",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    { "name": "avg_rpm", "expression": "AVG(`rpm`)" }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": { "fieldName": "avg_rpm", "displayName": "RPM" }
+              },
+              "frame": { "showTitle": true, "title": "Avg Fleet RPM" }
+            }
+          },
+          "position": { "x": 6, "y": 19, "width": 3, "height": 2 }
+        },
+        {
+          "widget": {
+            "name": "kpi_avg_current",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    { "name": "avg_current", "expression": "AVG(`current_amps`)" }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": { "fieldName": "avg_current", "displayName": "Amps" }
+              },
+              "frame": { "showTitle": true, "title": "Avg Motor Current" }
+            }
+          },
+          "position": { "x": 9, "y": 19, "width": 3, "height": 2 }
         }
       ]
     }

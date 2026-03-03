@@ -55,25 +55,40 @@ class DeviceRuntime:
         self.temp_c = self.random.uniform(58.0, 67.0)
         self.vibration_mm_s = self.random.uniform(2.5, 4.5)
         self.throughput_cpm = self.random.randint(80, 115)
+        self.rpm = self.random.randint(1800, 2400)
+        self.current_amps = self.random.uniform(4.0, 7.0)
+        self.humidity_pct = self.random.uniform(35.0, 55.0)
         self.state = "RUN"
         self.fault_code = None
 
-        host = f"{iothub_name}.azure-devices.net"
+        self.host = f"{iothub_name}.azure-devices.net"
         self.topic = f"devices/{config.device_id}/messages/events/"
-        username = f"{host}/{config.device_id}/?api-version=2021-04-12"
-        sas = self._build_sas(host)
-        self.client = mqtt.Client(client_id=config.device_id, protocol=mqtt.MQTTv311)
-        self.client.username_pw_set(username, sas)
+        self.username = f"{self.host}/{config.device_id}/?api-version=2021-04-12"
+        self._sas_expiry = 0
+        self._connect_mqtt()
+
+    def _build_sas(self) -> str:
+        resource_uri = f"{self.host}/devices/{self.config.device_id}"
+        self._sas_expiry = int(time.time()) + self.token_ttl_seconds
+        return generate_sas_token(resource_uri, self.config.device_key, self._sas_expiry)
+
+    def _connect_mqtt(self) -> None:
+        sas = self._build_sas()
+        self.client = mqtt.Client(client_id=self.config.device_id, protocol=mqtt.MQTTv311)
+        self.client.username_pw_set(self.username, sas)
         self.client.tls_set(cert_reqs=ssl.CERT_REQUIRED, tls_version=ssl.PROTOCOL_TLS_CLIENT)
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
-        self.client.connect(host, 8883, keepalive=60)
+        self.client.connect(self.host, 8883, keepalive=60)
         self.client.loop_start()
 
-    def _build_sas(self, host: str) -> str:
-        resource_uri = f"{host}/devices/{self.config.device_id}"
-        expiry = int(time.time()) + self.token_ttl_seconds
-        return generate_sas_token(resource_uri, self.config.device_key, expiry)
+    def _refresh_sas_if_needed(self) -> None:
+        margin = 300
+        if time.time() > (self._sas_expiry - margin):
+            LOGGER.info("Refreshing SAS token for %s", self.config.device_id)
+            self.client.loop_stop()
+            self.client.disconnect()
+            self._connect_mqtt()
 
     def _on_connect(self, _client: mqtt.Client, _userdata, _flags, rc: int, _props=None) -> None:
         if rc != 0:
@@ -99,6 +114,9 @@ class DeviceRuntime:
             self.temp_c = max(35.0, min(85.0, self.temp_c + self.random.uniform(-0.4, 0.4)))
             self.vibration_mm_s = max(0.8, min(8.0, self.vibration_mm_s + self.random.uniform(-0.25, 0.25)))
             self.throughput_cpm = max(60, min(125, self.throughput_cpm + self.random.randint(-2, 2)))
+            self.rpm = max(1200, min(2800, self.rpm + self.random.randint(-20, 20)))
+            self.current_amps = max(3.0, min(10.0, self.current_amps + self.random.uniform(-0.2, 0.2)))
+            self.humidity_pct = max(25.0, min(80.0, self.humidity_pct + self.random.uniform(-0.5, 0.5)))
             return
 
         if phase < warning_cutoff:
@@ -109,16 +127,27 @@ class DeviceRuntime:
             self.temp_c = 75.0 + temp_progress * (self.temp_fault_threshold + 8.0 - 75.0)
             self.vibration_mm_s = 7.0 + vib_progress * (self.vibration_fault_threshold + 2.0 - 7.0)
             self.throughput_cpm = max(30, int(95 - 50 * temp_progress + self.random.uniform(-2, 2)))
+            self.rpm = int(2400 + temp_progress * 600 + self.random.uniform(-15, 15))
+            self.current_amps = 7.0 + temp_progress * 5.5 + self.random.uniform(-0.3, 0.3)
+            self.humidity_pct = 50.0 + temp_progress * 20.0 + self.random.uniform(-1, 1)
             return
 
         if phase < fault_cutoff:
             self.state = "FAULT"
-            self.fault_code = "F_OVERHEAT" if self.temp_c >= self.temp_fault_threshold else "F_VIBRATION"
+            if self.current_amps >= 12.0:
+                self.fault_code = "OVERCURRENT"
+            elif self.temp_c >= self.temp_fault_threshold:
+                self.fault_code = "F_OVERHEAT"
+            else:
+                self.fault_code = "F_VIBRATION"
             self.temp_c = max(self.temp_fault_threshold + 0.2, self.temp_c + self.random.uniform(-0.6, 0.8))
             self.vibration_mm_s = max(
                 self.vibration_fault_threshold + 0.2, self.vibration_mm_s + self.random.uniform(-0.4, 0.6)
             )
             self.throughput_cpm = self.random.randint(0, 12)
+            self.rpm = self.random.randint(0, 200)
+            self.current_amps = max(12.0, self.current_amps + self.random.uniform(-0.5, 1.0))
+            self.humidity_pct = max(60.0, self.humidity_pct + self.random.uniform(-0.5, 1.5))
             return
 
         self.state = "STOPPED"
@@ -126,8 +155,12 @@ class DeviceRuntime:
         self.temp_c = max(45.0, self.temp_c - self.random.uniform(0.4, 1.0))
         self.vibration_mm_s = max(1.0, self.vibration_mm_s - self.random.uniform(0.3, 0.7))
         self.throughput_cpm = self.random.randint(0, 5)
+        self.rpm = 0
+        self.current_amps = max(0.5, self.current_amps - self.random.uniform(0.3, 0.8))
+        self.humidity_pct = max(30.0, self.humidity_pct - self.random.uniform(0.3, 0.8))
 
     def publish_once(self) -> None:
+        self._refresh_sas_if_needed()
         now = time.time()
         self._update_state(now)
 
@@ -136,12 +169,12 @@ class DeviceRuntime:
             "vibration_mm_s": round(self.vibration_mm_s, 3),
             "temp_c": round(self.temp_c, 3),
             "throughput_cpm": int(self.throughput_cpm),
+            "rpm": int(self.rpm),
+            "current_amps": round(self.current_amps, 3),
+            "humidity_pct": round(self.humidity_pct, 1),
             "state": self.state,
             "fault_code": self.fault_code,
             "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "power_w": round(self.throughput_cpm * 2.5 + 500, 1),
-            "rpm": int(self.throughput_cpm * 12),
-            "pressure_hpa": round(self.temp_c * 10 + 900, 1),
         }
         result = self.client.publish(self.topic, payload=json.dumps(payload), qos=1)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:

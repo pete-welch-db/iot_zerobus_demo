@@ -44,8 +44,10 @@ def generate_rows_for_device(
     temp = rnd.uniform(58.0, 67.0)
     vibration = rnd.uniform(2.0, 4.0)
     throughput = rnd.randint(85, 110)
+    rpm = rnd.randint(1800, 2400)
+    current_amps = rnd.uniform(4.0, 7.0)
+    humidity_pct = rnd.uniform(35.0, 55.0)
 
-    # cycle: normal -> warning ramp -> fault -> recover
     cycle = 600
     normal_cutoff = int(cycle * 0.55)
     warning_cutoff = int(cycle * 0.85)
@@ -62,6 +64,9 @@ def generate_rows_for_device(
             temp = max(35.0, min(80.0, temp + rnd.uniform(-0.5, 0.5)))
             vibration = max(0.8, min(8.5, vibration + rnd.uniform(-0.25, 0.25)))
             throughput = max(70, min(120, throughput + rnd.randint(-2, 2)))
+            rpm = max(1200, min(2800, rpm + rnd.randint(-20, 20)))
+            current_amps = max(3.0, min(10.0, current_amps + rnd.uniform(-0.2, 0.2)))
+            humidity_pct = max(25.0, min(80.0, humidity_pct + rnd.uniform(-0.5, 0.5)))
         elif phase < warning_cutoff:
             state = "RUN"
             fault_code = None
@@ -69,33 +74,50 @@ def generate_rows_for_device(
             temp = 74.0 + p * (cfg.temp_fault_threshold + 6.0 - 74.0) + rnd.uniform(-0.3, 0.3)
             vibration = 6.5 + p * (cfg.vibration_fault_threshold + 1.8 - 6.5) + rnd.uniform(-0.2, 0.2)
             throughput = max(25, int(95 - 55 * p + rnd.uniform(-2, 2)))
+            rpm = int(2400 + p * 600 + rnd.uniform(-15, 15))
+            current_amps = 7.0 + p * 5.5 + rnd.uniform(-0.3, 0.3)
+            humidity_pct = 50.0 + p * 20.0 + rnd.uniform(-1, 1)
         elif phase < fault_cutoff:
             state = "FAULT"
-            trigger = "TEMP" if temp >= cfg.temp_fault_threshold else "VIB"
-            fault_code = "F_OVERHEAT" if trigger == "TEMP" else "F_VIBRATION"
+            if current_amps >= 12.0:
+                fault_code = "OVERCURRENT"
+            elif temp >= cfg.temp_fault_threshold:
+                fault_code = "F_OVERHEAT"
+            else:
+                fault_code = "F_VIBRATION"
             temp = max(cfg.temp_fault_threshold + 0.1, temp + rnd.uniform(-0.4, 0.8))
             vibration = max(cfg.vibration_fault_threshold + 0.1, vibration + rnd.uniform(-0.3, 0.6))
             throughput = rnd.randint(0, 10)
+            rpm = rnd.randint(0, 200)
+            current_amps = max(12.0, current_amps + rnd.uniform(-0.5, 1.0))
+            humidity_pct = max(60.0, humidity_pct + rnd.uniform(-0.5, 1.5))
         else:
             state = "STOPPED"
             fault_code = None
             temp = max(45.0, temp - rnd.uniform(0.4, 1.1))
             vibration = max(1.0, vibration - rnd.uniform(0.3, 0.7))
             throughput = rnd.randint(0, 6)
+            rpm = 0
+            current_amps = max(0.5, current_amps - rnd.uniform(0.3, 0.8))
+            humidity_pct = max(30.0, humidity_pct - rnd.uniform(0.3, 0.8))
 
         is_fault = state == "FAULT"
-        threshold_crossed = temp >= cfg.temp_fault_threshold or vibration >= cfg.vibration_fault_threshold
+        threshold_crossed = (
+            temp >= cfg.temp_fault_threshold
+            or vibration >= cfg.vibration_fault_threshold
+            or current_amps >= 12.0
+        )
         row = {
             "machine_id": machine_id,
             "event_time": ts.isoformat().replace("+00:00", "Z"),
             "vibration_mm_s": round(vibration, 4),
             "temp_c": round(temp, 4),
             "throughput_cpm": int(throughput),
+            "rpm": int(rpm),
+            "current_amps": round(current_amps, 4),
+            "humidity_pct": round(humidity_pct, 1),
             "state": state,
             "fault_code": fault_code,
-            "power_w": round(throughput * 2.5 + 500, 2),
-            "rpm": int(throughput * 12),
-            "pressure_hpa": round(temp * 10 + 900, 2),
             "is_fault": is_fault,
             "threshold_crossed": threshold_crossed,
             "temp_fault_threshold": cfg.temp_fault_threshold,

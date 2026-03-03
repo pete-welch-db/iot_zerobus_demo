@@ -1,51 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib.sh"
 
-TARGET="${TARGET:-dev}"
-WAREHOUSE_ID="${WAREHOUSE_ID:-148ccb90800933a1}"
-CATALOG="${CATALOG:-welch}"
-SCHEMA="${SCHEMA:-iot_demo_dev}"
 MACHINE_ID="${MACHINE_ID:-MACH_A}"
-
-get_job_id() {
-  local resource_key="$1"
-  databricks bundle summary -t "$TARGET" | awk -v key="$resource_key" '
-    $1 == key ":" { in_key = 1; next }
-    in_key && $1 == "URL:" {
-      if (match($2, /jobs\/([0-9]+)/, arr)) {
-        print arr[1]
-        exit
-      }
-    }
-    in_key && NF == 0 { in_key = 0 }
-  '
-}
-
-get_pipeline_id() {
-  local resource_key="$1"
-  databricks bundle summary -t "$TARGET" | awk -v key="$resource_key" '
-    $1 == key ":" { in_key = 1; next }
-    in_key && $1 == "URL:" {
-      if (match($2, /pipelines\/([0-9a-f-]+)/, arr)) {
-        print arr[1]
-        exit
-      }
-    }
-    in_key && NF == 0 { in_key = 0 }
-  '
-}
-
-job_has_active_run() {
-  local job_id="$1"
-  databricks jobs list-runs --job-id "$job_id" --active-only --limit 1 --output json 2>/dev/null | \
-    python3 -c 'import json,sys; d=json.load(sys.stdin); print("true" if (d.get("runs") or []) else "false")'
-}
-
-pipeline_is_running() {
-  local pipeline_id="$1"
-  databricks pipelines get --pipeline-id "$pipeline_id" --output json 2>/dev/null | \
-    python3 -c 'import json,sys; d=json.load(sys.stdin); print("true" if d.get("state") == "RUNNING" else "false")'
-}
 
 echo "==> Resolving job IDs from bundle summary (target=$TARGET)"
 BRIDGE_JOB_ID="$(get_job_id iothub_to_zerobus_autorun || true)"
@@ -79,9 +37,6 @@ echo "==> Triggering realtime ML scoring job"
 databricks jobs run-now --job-id "$ML_JOB_ID" >/dev/null
 
 echo "==> Live health check for $MACHINE_ID"
-databricks api post /api/2.0/sql/statements --json "$(cat <<EOF
-{"warehouse_id":"$WAREHOUSE_ID","statement":"SELECT machine_id, state, last_event_time, telemetry_lag_seconds, ml_lag_seconds, prob_fault_next_5m FROM $CATALOG.$SCHEMA.vw_machine_current_status WHERE machine_id = '$MACHINE_ID'"}
-EOF
-)"
+sql_query "SELECT machine_id, state, last_event_time, telemetry_lag_seconds, ml_lag_seconds, prob_fault_next_5m FROM $CATALOG.$SCHEMA.vw_machine_current_status WHERE machine_id = '$MACHINE_ID'"
 
 echo "go phase complete."

@@ -69,12 +69,12 @@ def ensure_target_table(full_table_name: str) -> None:
           vibration_mm_s DOUBLE,
           temp_c DOUBLE,
           throughput_cpm INT,
+          rpm INT,
+          current_amps DOUBLE,
+          humidity_pct DOUBLE,
           state STRING,
           fault_code STRING,
-          ts STRING,
-          power_w DOUBLE,
-          rpm INT,
-          pressure_hpa DOUBLE
+          ts STRING
         )
         """
     )
@@ -105,12 +105,12 @@ def build_source_dataframe(connection_string: str, starting_offsets: str):
             StructField("vibration_mm_s", DoubleType(), True),
             StructField("temp_c", DoubleType(), True),
             StructField("throughput_cpm", IntegerType(), True),
+            StructField("rpm", IntegerType(), True),
+            StructField("current_amps", DoubleType(), True),
+            StructField("humidity_pct", DoubleType(), True),
             StructField("state", StringType(), True),
             StructField("fault_code", StringType(), True),
             StructField("ts", StringType(), True),
-            StructField("power_w", DoubleType(), True),
-            StructField("rpm", IntegerType(), True),
-            StructField("pressure_hpa", DoubleType(), True),
         ]
     )
 
@@ -119,6 +119,7 @@ def build_source_dataframe(connection_string: str, starting_offsets: str):
         .option("kafka.bootstrap.servers", bootstrap_servers)
         .option("subscribe", topic)
         .option("startingOffsets", starting_offsets)
+        .option("maxOffsetsPerTrigger", 10000)
         .option("kafka.security.protocol", "SASL_SSL")
         .option("kafka.sasl.mechanism", "PLAIN")
         .option(
@@ -139,28 +140,25 @@ def build_source_dataframe(connection_string: str, starting_offsets: str):
             F.col("parsed_json.vibration_mm_s").cast("double").alias("vibration_mm_s"),
             F.col("parsed_json.temp_c").cast("double").alias("temp_c"),
             F.col("parsed_json.throughput_cpm").cast("int").alias("throughput_cpm"),
+            F.col("parsed_json.rpm").cast("int").alias("rpm"),
+            F.col("parsed_json.current_amps").cast("double").alias("current_amps"),
+            F.col("parsed_json.humidity_pct").cast("double").alias("humidity_pct"),
             F.col("parsed_json.state").cast("string").alias("state"),
             F.col("parsed_json.fault_code").cast("string").alias("fault_code"),
             F.coalesce(
                 F.col("parsed_json.ts").cast("string"),
                 F.date_format(F.col("kafka_timestamp"), "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"),
             ).alias("ts"),
-            F.coalesce(
-                F.col("parsed_json.power_w").cast("double"),
-                F.col("parsed_json.throughput_cpm") * 2.5 + 500,
-            ).alias("power_w"),
-            F.coalesce(
-                F.col("parsed_json.rpm").cast("int"),
-                F.col("parsed_json.throughput_cpm") * 12,
-            ).alias("rpm"),
-            F.coalesce(
-                F.col("parsed_json.pressure_hpa").cast("double"),
-                F.col("parsed_json.temp_c") * 10 + 900,
-            ).alias("pressure_hpa"),
         )
         .where("machine_id IS NOT NULL")
     )
     return parsed_df
+
+
+_RECORD_FIELDS = [
+    "machine_id", "vibration_mm_s", "temp_c", "throughput_cpm",
+    "rpm", "current_amps", "humidity_pct", "state", "fault_code", "ts",
+]
 
 
 def make_batch_writer(
@@ -170,38 +168,33 @@ def make_batch_writer(
     client_id: str,
     client_secret: str,
 ):
-    def _write_batch(batch_df, batch_id: int) -> None:
+    _cached = {}
+
+    def _get_stream():
         from zerobus.sdk.shared import RecordType, StreamConfigurationOptions, TableProperties
         from zerobus.sdk.sync import ZerobusSdk
 
+        if "stream" not in _cached:
+            sdk = ZerobusSdk(ingest_url, unity_catalog_url=workspace_url)
+            table_properties = TableProperties(full_table_name)
+            options = StreamConfigurationOptions(record_type=RecordType.JSON)
+            _cached["stream"] = sdk.create_stream(client_id, client_secret, table_properties, options)
+        return _cached["stream"]
+
+    def _write_batch(batch_df, batch_id: int) -> None:
         LOGGER.info("Processing IoT Hub batch_id=%s", batch_id)
-        sdk = ZerobusSdk(ingest_url, unity_catalog_url=workspace_url)
-        table_properties = TableProperties(full_table_name)
-        options = StreamConfigurationOptions(record_type=RecordType.JSON)
-        stream = sdk.create_stream(client_id, client_secret, table_properties, options)
-        try:
-            rows = batch_df.toLocalIterator()
-            count = 0
-            for row in rows:
-                stream.ingest_record(
-                    {
-                        "machine_id": row["machine_id"],
-                        "vibration_mm_s": row["vibration_mm_s"],
-                        "temp_c": row["temp_c"],
-                        "throughput_cpm": row["throughput_cpm"],
-                        "state": row["state"],
-                        "fault_code": row["fault_code"],
-                        "ts": row["ts"],
-                        "power_w": row["power_w"],
-                        "rpm": row["rpm"],
-                        "pressure_hpa": row["pressure_hpa"],
-                    }
-                )
-                count += 1
-            stream.flush()
-            LOGGER.info("Ingested %s records to Zerobus for batch_id=%s", count, batch_id)
-        finally:
-            stream.close()
+        records = [
+            {f: row[f] for f in _RECORD_FIELDS}
+            for row in batch_df.collect()
+        ]
+        if not records:
+            LOGGER.info("Empty batch_id=%s, skipping.", batch_id)
+            return
+        stream = _get_stream()
+        for record in records:
+            stream.ingest_record(record)
+        stream.flush()
+        LOGGER.info("Ingested %s records to Zerobus for batch_id=%s", len(records), batch_id)
 
     return _write_batch
 

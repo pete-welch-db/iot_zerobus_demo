@@ -1,6 +1,6 @@
 {
   "name": "iot_zerobus_iothub_ingest",
-  "description": "Optional direct Lakeflow ingest from Azure IoT Hub endpoint (bridge job is primary ingest path for this repo).",
+  "description": "Zerobus/Lakeflow ingestion from Azure IoT Hub built-in Event Hubs-compatible endpoint",
   "source": {
     "type": "azure_eventhubs_compatible",
     "consumer_group": "zerobus-lakeflow",

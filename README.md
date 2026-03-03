@@ -15,8 +15,7 @@ Arduino-to-Databricks predictive maintenance and OEE demo using Azure IoT Hub, Z
    - Receives device telemetry (`arduino-panel`).
    - Exposes built-in Event Hubs-compatible endpoint.
 4. Databricks:
-   - `iothub_to_zerobus_bridge.py` is the primary ingest path into raw UC table storage.
-   - Optional direct Lakeflow config remains for side-by-side testing.
+   - Zerobus/Lakeflow connector ingests raw messages.
    - DLT pipeline builds Bronze/Silver/Gold Delta tables.
    - ML scripts score anomaly and fault probability.
    - SQL views power dashboards and Genie.
@@ -60,13 +59,6 @@ Arduino-to-Databricks predictive maintenance and OEE demo using Azure IoT Hub, Z
 
 ## Hardware Wiring (Arduino)
 
-<<<<<<< Current (Your changes)
-See `arduino/machine_panel.ino` for detailed wiring comments.
-
-- Pots (10kΩ linear): `A0` vibration, `A1` temperature, `A2` throughput
-- Buttons (momentary, `INPUT_PULLUP`): `D2` Run/Stop, `D3` Manual fault, `D4` Emergency stop
-- LEDs (220Ω series): `D10` RUN (green), `D11` FAULT (red)
-=======
 - Pots:
   - `A0` vibration
   - `A1` temperature
@@ -77,20 +69,10 @@ See `arduino/machine_panel.ino` for detailed wiring comments.
 - Optional LEDs:
   - `D10` RUN
   - `D11` FAULT
-- LED wiring:
-  - Use ~220 ohm resistor in series for each LED to protect board pins.
-- Fault behavior:
-  - Pot threshold fault auto-triggers when `temp_c >= 85` or `vibration_mm_s >= 9.5`.
-  - FAULT button can force fault injection on demand for deterministic demos.
-- Suggested future actions:
-  - Add dedicated e-stop button (hard STOPPED).
-  - Add long-press fault-clear behavior.
-  - Add heartbeat LED for publish/connectivity status.
->>>>>>> Incoming (Background Agent changes)
 
 Serial CSV format every ~1 second:
 
-`vibration,temp,throughput,state,faultCode,power_w,rpm,pressure_hpa`
+`vibration,temp,throughput,state,faultCode`
 
 ## Edge Setup (Primary Direct Mode)
 
@@ -102,7 +84,6 @@ Serial CSV format every ~1 second:
    - `IOT_HUB_HOST`
    - `DEVICE_ID` (default `arduino-panel`)
    - `SAS_TOKEN`
-   - Keep real values local only (do not commit secrets to git).
 3. Upload `arduino/machine_panel.ino` to the board.
 4. Open Serial Monitor at `115200` to verify:
    - WiFi connection and IP
@@ -142,8 +123,8 @@ export MACHINE_ID="MACH_A"
 python sender.py
 ```
 
-Both modes should publish the same payload contract:
-`schema_version`, `machine_id`, `vibration_mm_s`, `temp_c`, `throughput_cpm`, `state`, `fault_code`, `rpm`, `load_pct`, `humidity_rh`, `current_a`, `power_kw`, `power_factor`, `voltage_v`, `pressure_bar`, `flow_rate_lpm`, `cycle_count`, `runtime_hours`, `ts`.
+Both modes should publish the same payload fields:
+`machine_id`, `vibration_mm_s`, `temp_c`, `throughput_cpm`, `state`, `fault_code`, `ts`.
 
 ## Scale Testing and Synthetic Training Data
 
@@ -178,7 +159,6 @@ python autoprovision_iothub_devices.py \
   --device-prefix "sim-device" \
   --machine-prefix "MACH" \
   --padding 4 \
-  --include-device-keys \
   --output-file "devices.json"
 ```
 
@@ -380,8 +360,6 @@ UC metric views:
 - Telemetry visible in dashboard: `< 30-60s` after bridge run.
 - Fleet average `telemetry_lag_seconds`: `< 60s`.
 - Fleet average `ml_lag_seconds`: `< 90s` after realtime scoring.
-- `% machines within telemetry SLO`: `>= 95%`.
-- `% machines within ML SLO`: `>= 90%`.
 
 ## Notes
 

@@ -163,7 +163,7 @@ resources:
           depends_on:
             - task_key: preflight_checks
           spark_python_task:
-            python_file: ../zerobus/ZEROBUS_INGEST_2026-03-03T15_04_07.404Z.py
+            python_file: ../zerobus/setup_ingest.py
             parameters:
               - --catalog
               - ${var.catalog}

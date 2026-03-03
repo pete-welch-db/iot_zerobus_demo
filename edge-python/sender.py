@@ -36,16 +36,17 @@ MQTT_USERNAME = f"{MQTT_HOST}/{DEVICE_ID}/?api-version=2021-04-12"
 MQTT_TOPIC = f"devices/{DEVICE_ID}/messages/events/"
 
 ALLOWED_STATES = {"RUN", "STOPPED", "FAULT"}
-TOKEN_REFRESH_SECONDS = int(os.getenv("TOKEN_REFRESH_SECONDS", "2700"))
 
 
 def parse_serial_line(line: str) -> Optional[Tuple[float, float, int, str, Optional[str]]]:
     parts = [p.strip() for p in line.split(",")]
-    if len(parts) != 5:
+    if len(parts) < 5:
         LOGGER.warning("Skipping malformed line (field count): %s", line)
         return None
 
-    vib_raw, temp_raw, tput_raw, state_raw, fault_raw = parts
+    # Backward/forward compatible with expanded CSV: consume first 5 fields,
+    # ignore any additional diagnostics fields emitted by firmware.
+    vib_raw, temp_raw, tput_raw, state_raw, fault_raw = parts[:5]
     if state_raw not in ALLOWED_STATES:
         LOGGER.warning("Skipping malformed line (state): %s", line)
         return None
@@ -68,32 +69,13 @@ def parse_serial_line(line: str) -> Optional[Tuple[float, float, int, str, Optio
 
 def build_payload(parsed: Tuple[float, float, int, str, Optional[str]]) -> str:
     vibration, temp_c, throughput, state, fault_code = parsed
-    load_pct = max(0.0, min(100.0, throughput / 120.0 * 100.0))
-    rpm = max(0, int(800 + throughput * 18))
-    humidity_rh = max(20.0, min(80.0, 45.0 + (temp_c - 60.0) * 0.4))
-    voltage_v = 230.0
-    current_a = max(0.5, 4.0 + load_pct * 0.16)
-    power_factor = 0.92
-    power_kw = round((voltage_v * current_a * power_factor * 1.732) / 1000.0, 4)
-    pressure_bar = max(1.0, 2.5 + load_pct / 45.0)
-    flow_rate_lpm = max(5.0, 40.0 + throughput * 0.95)
     payload = {
-        "schema_version": "2.0",
         "machine_id": MACHINE_ID,
         "vibration_mm_s": vibration,
         "temp_c": temp_c,
         "throughput_cpm": throughput,
         "state": state,
         "fault_code": fault_code,
-        "rpm": rpm,
-        "load_pct": round(load_pct, 3),
-        "humidity_rh": round(humidity_rh, 3),
-        "current_a": round(current_a, 3),
-        "power_kw": power_kw,
-        "power_factor": power_factor,
-        "voltage_v": voltage_v,
-        "pressure_bar": round(pressure_bar, 3),
-        "flow_rate_lpm": round(flow_rate_lpm, 3),
         # Databricks parses this when present; otherwise IoT Hub enqueue time is used downstream.
         "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
@@ -132,9 +114,6 @@ def connect_serial() -> serial.Serial:
 def main() -> None:
     mqtt_client = build_mqtt_client()
     serial_conn: Optional[serial.Serial] = None
-    cycle_count = 0
-    runtime_hours = 0.0
-    last_token_refresh = time.time()
 
     mqtt_client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
     mqtt_client.loop_start()
@@ -158,22 +137,11 @@ def main() -> None:
                     continue
 
                 payload = build_payload(parsed)
-                payload_dict = json.loads(payload)
-                cycle_count += 1
-                runtime_hours += 1.0 / 3600.0
-                payload_dict["cycle_count"] = cycle_count
-                payload_dict["runtime_hours"] = round(runtime_hours, 4)
-                payload = json.dumps(payload_dict)
                 result = mqtt_client.publish(MQTT_TOPIC, payload=payload, qos=1)
                 if result.rc != mqtt.MQTT_ERR_SUCCESS:
                     LOGGER.error("Publish failed with rc=%s", result.rc)
                 else:
                     LOGGER.info("Published telemetry: %s", payload)
-                if time.time() - last_token_refresh >= TOKEN_REFRESH_SECONDS:
-                    LOGGER.warning(
-                        "SAS token may be near expiry. Restart sender with a fresh SAS token for uninterrupted publish."
-                    )
-                    last_token_refresh = time.time()
             except SerialException as exc:
                 LOGGER.error("Serial read failed: %s. Reconnecting serial...", exc)
                 try:

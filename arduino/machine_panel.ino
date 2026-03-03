@@ -1,54 +1,111 @@
-// Arduino Uno WiFi Rev2 machine panel simulator for manufacturing demo.
-// Primary mode: publishes telemetry JSON directly to Azure IoT Hub over MQTT/TLS.
-// Fallback mode: emits CSV over serial for local Python bridge.
-//
-// Wiring guide:
-// - POT_VIB  (A0): potentiometer signal pin -> A0, outer pins -> 5V and GND.
-// - POT_TEMP (A1): potentiometer signal pin -> A1, outer pins -> 5V and GND.
-// - POT_TPUT (A2): potentiometer signal pin -> A2, outer pins -> 5V and GND.
-// - BTN_RUN  (D2): momentary button from D2 to GND (uses INPUT_PULLUP).
-// - BTN_FAULT(D3): momentary button from D3 to GND (uses INPUT_PULLUP).
-// - LED_RUN  (D10): LED + 220 ohm resistor to GND.
-// - LED_FAULT(D11): LED + 220 ohm resistor to GND.
-//
-// Demo actions:
-// - Press RUN button to toggle RUN <-> STOPPED.
-// - Press FAULT button to force/clear FAULT.
-// - Raise temperature/vibration pots above threshold to auto-emit FAULT risk.
+/*
+ * ======================================================================
+ * Machine Panel Simulator - Arduino Uno WiFi Rev2
+ * ======================================================================
+ *
+ * PURPOSE
+ * -------
+ * Simulates an industrial machine's sensor panel for a Databricks IoT
+ * demo (Zerobus ingest -> DLT -> ML -> AI/BI dashboard).  Publishes
+ * telemetry as JSON over MQTT/TLS directly to Azure IoT Hub.  Also
+ * emits CSV on Serial for a local Python fallback bridge.
+ *
+ * WIRING DIAGRAM
+ * --------------
+ *   Potentiometers (10 k-ohm linear taper, connect VCC-GND-Wiper):
+ *     A0  POT_VIB   - Vibration       0-10 mm/s
+ *     A1  POT_TEMP  - Temperature     30-100 C
+ *     A2  POT_TPUT  - Throughput      0-120 CPM / RPM 0-3000 /
+ *                                     Current 0-~13 A (derived)
+ *
+ *   Buttons (normally-open momentary, one leg to pin, other to GND):
+ *     D2  BTN_RUN   - Toggle RUN <-> STOPPED
+ *     D3  BTN_FAULT - Inject / clear manual FAULT
+ *
+ *   LEDs (anode to pin through 220-ohm resistor, cathode to GND):
+ *     D10  LED_RUN   - Lit when machine state is RUN
+ *     D11  LED_FAULT - Lit when machine state is FAULT
+ *
+ *   Optional (recommended additions -- wired but not coded by default):
+ *     D9   RGB LED (PWM) - green=RUN, yellow=WARNING, red=FAULT
+ *     D8   Piezo buzzer  - beep on state change, continuous on FAULT
+ *     D4   BTN_ESTOP     - Emergency-stop button (E_STOP fault code)
+ *
+ * SENSOR FORMULAS
+ * ---------------
+ *   vibration_mm_s   = raw * 10.0 / 1023.0             (0.0 - 10.0)
+ *   temp_c           = 30.0 + raw * 70.0 / 1023.0      (30.0 - 100.0)
+ *   throughput_cpm   = map(raw, 0, 1023, 0, 120)        (0 - 120)
+ *   rpm              = map(raw, 0, 1023, 0, 3000)        (0 - 3000)
+ *   current_amps     = (raw * 10.0/1023.0) * thermalFactor   (0 - ~13)
+ *   humidity_pct     = 30.0 + raw * 50.0 / 1023.0       (30.0 - 80.0)
+ *
+ * STATE MACHINE
+ * -------------
+ *   States: RUN, STOPPED, FAULT
+ *
+ *   BTN_RUN (D2):
+ *     RUN -> STOPPED     (press once)
+ *     STOPPED -> RUN     (press again)
+ *     FAULT -> no effect (must clear via BTN_FAULT first)
+ *
+ *   BTN_FAULT (D3):
+ *     RUN/STOPPED -> FAULT  (injects manual fault, code MANUAL_FAULT)
+ *     FAULT -> previous     (clears fault, returns to RUN or STOPPED)
+ *
+ *   Threshold auto-fault (only when currentState == RUN):
+ *     temp_c >= 85.0         -> emitted FAULT, code OVERTEMP
+ *     vibration >= 9.5       -> emitted FAULT, code VIBRATION
+ *     current_amps >= 12.0   -> emitted FAULT, code OVERCURRENT
+ *     vibration >= 9.5 && rpm > 2000  -> BEARING_WEAR
+ *
+ * DEMO USE CASE
+ * -------------
+ *   1) Power on Arduino -> connects WiFi hotspot -> publishes RUN data.
+ *   2) Slowly dial POT_TEMP or POT_VIB above threshold to show
+ *      progressive degradation leading to auto-FAULT in the dashboard.
+ *   3) Press BTN_FAULT for manual operator fault injection.
+ *   4) Press BTN_FAULT again to clear and return to normal.
+ *   5) Press BTN_RUN to stop/start the machine.
+ *
+ * FAULT CODES
+ * -----------
+ *   OVERTEMP      - Temperature above 85 C
+ *   VIBRATION     - Vibration above 9.5 mm/s
+ *   OVERCURRENT   - Motor current above 12 A
+ *   BEARING_WEAR  - High vibration + high RPM combination
+ *   MANUAL_FAULT  - Operator-injected via BTN_FAULT button
+ * ======================================================================
+ */
 
 #include <SPI.h>
 #include <WiFiNINA.h>
 #include <PubSubClient.h>
+#include "secrets.h"
 
 enum MachineState { RUN, STOPPED, FAULT };
 
-const int POT_VIB = A0;
-const int POT_TEMP = A1;
-const int POT_TPUT = A2;
+// ----- Pin Assignments -----
+const int POT_VIB  = A0;   // Vibration potentiometer wiper
+const int POT_TEMP = A1;   // Temperature potentiometer wiper
+const int POT_TPUT = A2;   // Throughput / RPM potentiometer wiper
 
-const int BTN_RUN = 2;
-const int BTN_FAULT = 3;
+const int BTN_RUN   = 2;   // Run/Stop toggle (INPUT_PULLUP, press to GND)
+const int BTN_FAULT = 3;   // Fault inject/clear (INPUT_PULLUP, press to GND)
 
-const int LED_RUN = 10;
-const int LED_FAULT = 11;
+const int LED_RUN   = 10;  // Green LED: lit during RUN
+const int LED_FAULT = 11;  // Red LED:   lit during FAULT
 
+// ----- Timing & Thresholds -----
 const unsigned long SAMPLE_INTERVAL_MS = 1000;
 const unsigned long DEBOUNCE_MS = 40;
 const float TEMP_FAULT_THRESHOLD_C = 85.0;
 const float VIBRATION_FAULT_THRESHOLD_MM_S = 9.5;
+const float CURRENT_FAULT_THRESHOLD_A = 12.0;
 
-// ---------- WiFi / IoT Hub Direct Publish Config ----------
-// Best practice: replace these placeholders locally or inject from a private header.
-const char WIFI_SSID[] = "YOUR_WIFI_SSID";
-const char WIFI_PASSWORD[] = "YOUR_WIFI_PASSWORD";
-
-const char IOT_HUB_HOST[] = "iothub-zerobus-demo-welch.azure-devices.net";
-const int IOT_HUB_PORT = 8883;
-const char DEVICE_ID[] = "arduino-panel";
-const char MACHINE_ID[] = "MACH_A";
-const char SAS_TOKEN[] = "SharedAccessSignature sr=<resource>&sig=<signature>&se=<expiry>";
-
-// Topic and username follow Azure IoT Hub device MQTT convention.
+// Credentials loaded from secrets.h (gitignored).
+// See secrets.h for WIFI_SSID, WIFI_PASSWORD, IOT_HUB_HOST,
+// IOT_HUB_PORT, DEVICE_ID, MACHINE_ID, SAS_TOKEN.
 char mqttTopic[96];
 char mqttUsername[192];
 
@@ -61,8 +118,6 @@ MachineState previousNonFaultState = RUN;
 unsigned long lastEmitMs = 0;
 unsigned long lastRunEdgeMs = 0;
 unsigned long lastFaultEdgeMs = 0;
-unsigned long cycleCount = 0;
-float runtimeHours = 0.0;
 
 int lastRunButtonReading = HIGH;
 int lastFaultButtonReading = HIGH;
@@ -71,6 +126,9 @@ struct TelemetrySample {
   float vibration;
   float tempC;
   int throughput;
+  int rpm;
+  float currentAmps;
+  float humidityPct;
   const char* state;
   const char* faultCode;
 };
@@ -131,6 +189,20 @@ int mapThroughputCpm(int rawTput) {
   return map(rawTput, 0, 1023, 0, 120);
 }
 
+int mapRpm(int rawTput) {
+  return map(rawTput, 0, 1023, 0, 3000);
+}
+
+float mapCurrentAmps(int rawTput, float tempC) {
+  float baseAmps = (rawTput * 10.0) / 1023.0;
+  float thermalFactor = 1.0 + max(0.0f, (tempC - 60.0f)) * 0.02;
+  return baseAmps * thermalFactor;
+}
+
+float mapHumidityPct(int rawTemp) {
+  return 30.0 + (rawTemp * 50.0) / 1023.0;
+}
+
 const char* stateToString(MachineState state) {
   switch (state) {
     case RUN:
@@ -182,9 +254,11 @@ void connectWifi() {
 
   Serial.print("Connecting WiFi SSID: ");
   Serial.println(WIFI_SSID);
+  unsigned long backoff = 3000;
   while (WiFi.status() != WL_CONNECTED) {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    delay(5000);
+    delay(backoff);
+    backoff = min(backoff * 2, 30000UL);
     Serial.print(".");
   }
   Serial.println();
@@ -196,16 +270,27 @@ void connectMqtt() {
   if (WiFi.status() != WL_CONNECTED) {
     return;
   }
+  unsigned long backoff = 2000;
   while (!mqttClient.connected()) {
     Serial.println("Connecting to Azure IoT Hub MQTT...");
     bool ok = mqttClient.connect(DEVICE_ID, mqttUsername, SAS_TOKEN);
     if (ok) {
       Serial.println("Connected to Azure IoT Hub.");
-    } else {
-      Serial.print("MQTT connect failed, rc=");
-      Serial.println(mqttClient.state());
-      delay(3000);
+      return;
     }
+    Serial.print("MQTT connect failed, rc=");
+    Serial.println(mqttClient.state());
+    delay(backoff);
+    backoff = min(backoff * 2, 30000UL);
+  }
+}
+
+void reconnectIfNeeded() {
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWifi();
+  }
+  if (WiFi.status() == WL_CONNECTED && !mqttClient.connected()) {
+    connectMqtt();
   }
 }
 
@@ -217,43 +302,76 @@ TelemetrySample readSample() {
   float vibration = mapVibrationMmS(rawVib);
   float tempC = mapTempC(rawTemp);
   int throughput = mapThroughputCpm(rawTput);
+  int rpm = mapRpm(rawTput);
+  float currentAmps = mapCurrentAmps(rawTput, tempC);
+  float humidityPct = mapHumidityPct(rawTemp);
   const char* emittedState = stateToString(currentState);
   const char* faultCode = "NONE";
-  bool thresholdFault = (tempC >= TEMP_FAULT_THRESHOLD_C) || (vibration >= VIBRATION_FAULT_THRESHOLD_MM_S);
+  bool thresholdFault = (tempC >= TEMP_FAULT_THRESHOLD_C)
+                     || (vibration >= VIBRATION_FAULT_THRESHOLD_MM_S)
+                     || (currentAmps >= CURRENT_FAULT_THRESHOLD_A);
 
   if (currentState == STOPPED) {
     throughput = 0;
+    rpm = 0;
+    currentAmps = 0.0;
   } else if (currentState == FAULT) {
     throughput = 0;
+    rpm = 0;
     tempC = 90.0;
-    // Keep FAULT vibration obviously abnormal.
     vibration = max(vibration + 2.5, 10.5);
-    faultCode = "OVERTEMP";
+    currentAmps = max(currentAmps, CURRENT_FAULT_THRESHOLD_A + 1.0);
+    faultCode = "MANUAL_FAULT";
   } else if (currentState == RUN && thresholdFault) {
-    // Auto-surface process risk as FAULT when pots exceed limits.
     emittedState = "FAULT";
     throughput = 0;
-    faultCode = tempC >= TEMP_FAULT_THRESHOLD_C ? "OVERTEMP" : "VIBRATION";
+    rpm = 0;
+    if (currentAmps >= CURRENT_FAULT_THRESHOLD_A) {
+      faultCode = "OVERCURRENT";
+    } else if (vibration >= VIBRATION_FAULT_THRESHOLD_MM_S && rpm > 2000) {
+      faultCode = "BEARING_WEAR";
+    } else if (tempC >= TEMP_FAULT_THRESHOLD_C) {
+      faultCode = "OVERTEMP";
+    } else {
+      faultCode = "VIBRATION";
+    }
   }
 
   bool emittedFault = strcmp(emittedState, "FAULT") == 0;
   digitalWrite(LED_RUN, strcmp(emittedState, "RUN") == 0 ? HIGH : LOW);
   digitalWrite(LED_FAULT, emittedFault ? HIGH : LOW);
 
-  TelemetrySample s = {vibration, tempC, throughput, emittedState, faultCode};
+  TelemetrySample s = {vibration, tempC, throughput, rpm, currentAmps, humidityPct, emittedState, faultCode};
   return s;
 }
 
 void emitSerialCsv(const TelemetrySample& s) {
-  Serial.print(s.vibration, 2);
-  Serial.print(",");
-  Serial.print(s.tempC, 2);
-  Serial.print(",");
-  Serial.print(s.throughput);
-  Serial.print(",");
-  Serial.print(s.state);
-  Serial.print(",");
-  Serial.println(s.faultCode);
+  float loadPct = constrain(((float)s.throughput / 120.0) * 100.0, 0.0, 100.0);
+  float voltageV = 230.0;
+  float currentA = s.currentAmps;
+  float powerFactor = 0.92;
+  float powerKw = (voltageV * currentA * powerFactor * 1.732) / 1000.0;
+  float pressureBar = max(1.0, 2.5 + loadPct / 45.0);
+  float flowRateLpm = max(5.0, 40.0 + ((float)s.throughput * 0.95));
+
+  // Expanded CSV (fallback-safe): the Python sender reads first 5 fields and
+  // ignores extras, so we can expose richer telemetry for local debugging.
+  // vibration,temp,throughput,state,faultCode,rpm,current_amps,humidity_pct,
+  // load_pct,power_kw,power_factor,voltage_v,pressure_bar,flow_rate_lpm
+  Serial.print(s.vibration, 2);     Serial.print(",");
+  Serial.print(s.tempC, 2);         Serial.print(",");
+  Serial.print(s.throughput);       Serial.print(",");
+  Serial.print(s.state);            Serial.print(",");
+  Serial.print(s.faultCode);        Serial.print(",");
+  Serial.print(s.rpm);              Serial.print(",");
+  Serial.print(currentA, 2);        Serial.print(",");
+  Serial.print(s.humidityPct, 1);   Serial.print(",");
+  Serial.print(loadPct, 2);         Serial.print(",");
+  Serial.print(powerKw, 3);         Serial.print(",");
+  Serial.print(powerFactor, 3);     Serial.print(",");
+  Serial.print(voltageV, 1);        Serial.print(",");
+  Serial.print(pressureBar, 3);     Serial.print(",");
+  Serial.println(flowRateLpm, 2);
 }
 
 void publishMqttJson(const TelemetrySample& s) {
@@ -265,99 +383,35 @@ void publishMqttJson(const TelemetrySample& s) {
   }
   mqttClient.loop();
 
-  // AVR printf formatting does not reliably support %f; convert floats explicitly.
-  char vibBuf[16];
-  char tempBuf[16];
+  char vibBuf[16], tempBuf[16], curBuf[16], humBuf[16];
   dtostrf(s.vibration, 1, 2, vibBuf);
   dtostrf(s.tempC, 1, 2, tempBuf);
+  dtostrf(s.currentAmps, 1, 2, curBuf);
+  dtostrf(s.humidityPct, 1, 1, humBuf);
 
-  char* vib = vibBuf;
-  while (*vib == ' ') vib++;
-  char* temp = tempBuf;
-  while (*temp == ' ') temp++;
+  char* vib = vibBuf;   while (*vib == ' ') vib++;
+  char* temp = tempBuf;  while (*temp == ' ') temp++;
+  char* cur = curBuf;    while (*cur == ' ') cur++;
+  char* hum = humBuf;    while (*hum == ' ') hum++;
 
-  cycleCount++;
-  runtimeHours += (float)SAMPLE_INTERVAL_MS / 3600000.0;
-  float loadPct = constrain(((float)s.throughput / 120.0) * 100.0, 0.0, 100.0);
-  int rpm = 800 + (s.throughput * 18);
-  float humidityRh = constrain(45.0 + ((s.tempC - 60.0) * 0.4), 20.0, 80.0);
-  float voltageV = 230.0;
-  float currentA = 4.0 + (loadPct * 0.16);
-  float powerFactor = 0.92;
-  float powerKw = (voltageV * currentA * powerFactor * 1.732) / 1000.0;
-  float pressureBar = max(1.0, 2.5 + loadPct / 45.0);
-  float flowRateLpm = max(5.0, 40.0 + ((float)s.throughput * 0.95));
-
-  char loadBuf[16];
-  char humidityBuf[16];
-  char currentBuf[16];
-  char powerKwBuf[16];
-  char powerFactorBuf[16];
-  char pressureBuf[16];
-  char flowBuf[16];
-  char runtimeBuf[16];
-  dtostrf(loadPct, 1, 2, loadBuf);
-  dtostrf(humidityRh, 1, 2, humidityBuf);
-  dtostrf(currentA, 1, 2, currentBuf);
-  dtostrf(powerKw, 1, 3, powerKwBuf);
-  dtostrf(powerFactor, 1, 3, powerFactorBuf);
-  dtostrf(pressureBar, 1, 3, pressureBuf);
-  dtostrf(flowRateLpm, 1, 2, flowBuf);
-  dtostrf(runtimeHours, 1, 4, runtimeBuf);
-
-  char* load = loadBuf; while (*load == ' ') load++;
-  char* humidity = humidityBuf; while (*humidity == ' ') humidity++;
-  char* current = currentBuf; while (*current == ' ') current++;
-  char* powerKwStr = powerKwBuf; while (*powerKwStr == ' ') powerKwStr++;
-  char* powerFactorStr = powerFactorBuf; while (*powerFactorStr == ' ') powerFactorStr++;
-  char* pressure = pressureBuf; while (*pressure == ' ') pressure++;
-  char* flow = flowBuf; while (*flow == ' ') flow++;
-  char* runtime = runtimeBuf; while (*runtime == ' ') runtime++;
-
-  // ts remains null on-device; Databricks falls back to IoT Hub enqueue time.
-  char payload[700];
+  char payload[512];
   if (strcmp(s.faultCode, "NONE") == 0) {
     snprintf(
-      payload,
-      sizeof(payload),
-      "{\"schema_version\":\"2.0\",\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,\"state\":\"%s\",\"fault_code\":null,\"rpm\":%d,\"load_pct\":%s,\"humidity_rh\":%s,\"current_a\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":230.0,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,\"cycle_count\":%lu,\"runtime_hours\":%s,\"ts\":null}",
-      MACHINE_ID,
-      vib,
-      temp,
-      s.throughput,
-      s.state,
-      rpm,
-      load,
-      humidity,
-      current,
-      powerKwStr,
-      powerFactorStr,
-      pressure,
-      flow,
-      cycleCount,
-      runtime
+      payload, sizeof(payload),
+      "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,"
+      "\"rpm\":%d,\"current_amps\":%s,\"humidity_pct\":%s,"
+      "\"state\":\"%s\",\"fault_code\":null,\"ts\":null}",
+      MACHINE_ID, vib, temp, s.throughput,
+      s.rpm, cur, hum, s.state
     );
   } else {
     snprintf(
-      payload,
-      sizeof(payload),
-      "{\"schema_version\":\"2.0\",\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,\"state\":\"%s\",\"fault_code\":\"%s\",\"rpm\":%d,\"load_pct\":%s,\"humidity_rh\":%s,\"current_a\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":230.0,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,\"cycle_count\":%lu,\"runtime_hours\":%s,\"ts\":null}",
-      MACHINE_ID,
-      vib,
-      temp,
-      s.throughput,
-      s.state,
-      s.faultCode,
-      rpm,
-      load,
-      humidity,
-      current,
-      powerKwStr,
-      powerFactorStr,
-      pressure,
-      flow,
-      cycleCount,
-      runtime
+      payload, sizeof(payload),
+      "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,"
+      "\"rpm\":%d,\"current_amps\":%s,\"humidity_pct\":%s,"
+      "\"state\":\"%s\",\"fault_code\":\"%s\",\"ts\":null}",
+      MACHINE_ID, vib, temp, s.throughput,
+      s.rpm, cur, hum, s.state, s.faultCode
     );
   }
 
@@ -375,6 +429,7 @@ void emitSample() {
 
 void loop() {
   updateStateFromButtons();
+  reconnectIfNeeded();
 
   if (WiFi.status() == WL_CONNECTED) {
     mqttClient.loop();

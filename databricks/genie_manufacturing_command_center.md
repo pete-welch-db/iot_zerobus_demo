@@ -16,11 +16,9 @@ Use SQL warehouse: `148ccb90800933a1`
 - `mv_machine_risk`
 - `mv_machine_freshness`
 - `mv_machine_current`
-- `mv_machine_slo`
 - `vw_machine_telemetry_live`
 - `vw_machine_health`
 - `vw_machine_current_status`
-- `vw_machine_slo_status`
 - `dim_machine`
 
 Do not include Bronze/raw tables in this Genie scope.
@@ -33,8 +31,6 @@ Do not include Bronze/raw tables in this Genie scope.
 5. For "current" questions, default to latest `window_end` or `last_event_time`.
 6. For machine line names, use `dim_machine.line_name`.
 7. Always return machine IDs in results alongside business labels.
-8. Use `mv_*` views for KPI rollups and benchmarks; use `vw_*` views for latest row diagnostics.
-9. For SLO compliance, use telemetry lag <= 60s and ML lag <= 90s unless user overrides.
 
 ## Validation Prompt Pack
 - Which machine is most likely to fault in the next 5 minutes?
@@ -44,8 +40,6 @@ Do not include Bronze/raw tables in this Genie scope.
 - Compare availability, performance, and quality for all machines right now.
 - Show trend of vibration and temperature for the last hour for MACH_A.
 - Which line has the highest average fault risk today?
-- What percent of machines are within telemetry and ML SLO right now?
-- List critical machines where lag SLO is breached and fault risk is medium or high.
 
 ## Expected Behavior Checks
 - Results align with dashboard metrics for latest windows.
