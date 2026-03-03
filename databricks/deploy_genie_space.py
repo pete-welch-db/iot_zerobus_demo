@@ -142,21 +142,59 @@ def main() -> None:
         "Show trend of vibration and temperature for the last hour for MACH_A.",
         "Which line has the highest average fault risk today?",
         "Which machine has the highest ML lag right now?",
+        "What is the average telemetry lag for MACH_A?",
+        "Which machines have vibration above 8 mm/s in the last hour?",
+        "Show me machines with fault_band = HIGH.",
+        "Compare OEE across all lines for the latest window.",
+        "What is the downtime breakdown by machine for the last 6 windows?",
+        "List the top 5 machines by fault risk.",
+        "Show telemetry lag by machine.",
     ]
 
-    genie_instructions = f"""You are an operations analytics assistant for an IoT manufacturing demo.
-You have access to curated objects in catalog '{catalog}' and schema '{schema}' only.
+    instruction_kpi = f"""KPI and business term definitions for catalog '{catalog}' and schema '{schema}':
 
-Definitions and behavior:
-- "risk" or "likely to fail" means prob_fault_next_5m.
-- "anomaly" means anomaly_score, with threshold >= 0.7 unless user specifies otherwise.
-- "downtime" means time_in_stopped_s + time_in_fault_s.
-- "OEE" means oee_pct from vw_machine_health or vw_machine_current_status.
-- Prefer Unity Catalog metric views (mv_machine_*) for KPI aggregations when possible.
-- For "current" questions, default to latest last_event_time/window_end rows.
-- Include machine_id in answers, and use dim_machine.line_name when relevant.
-- For freshness questions, use telemetry_lag_seconds and ml_lag_seconds.
-- Never reference raw/bronze tables unless explicitly requested.
+- fault_risk = prob_fault_next_5m (probability of fault in next 5 minutes, 0-1)
+- downtime_seconds = time_in_stopped_s + time_in_fault_s
+- oee = oee_pct (Overall Equipment Effectiveness, 0-100)
+- anomaly = anomaly_score >= 0.7 unless user specifies otherwise
+- fault_band: HIGH when prob_fault_next_5m >= 0.7, MEDIUM when >= 0.4, else LOW
+- availability = availability_pct, performance = performance_pct, quality = quality_pct
+- telemetry_lag_seconds = seconds since last event from device
+- ml_lag_seconds = seconds since last ML score
+"""
+
+    instruction_tables = f"""Table and column context:
+
+- vw_machine_current_status: latest per-machine status (state, temp_c, vibration_mm_s, throughput_cpm, oee_pct, anomaly_score, prob_fault_next_5m, telemetry_lag_seconds, ml_lag_seconds)
+- vw_machine_health: windowed health with OEE, availability, performance, quality, anomaly, fault risk
+- vw_machine_telemetry_live: raw telemetry for last 2 hours
+- dim_machine: machine_id to line_name mapping (e.g. MACH_A -> Packaging Line A)
+- mv_machine_*: Unity Catalog metric views for aggregations; prefer these for KPI queries
+- Never reference bronze/silver/gold or raw tables unless explicitly requested
+"""
+
+    instruction_sql = f"""Example SQL patterns. Use these as reference for common queries:
+
+-- Latest OEE by machine
+SELECT machine_id, oee_pct, availability_pct, performance_pct, quality_pct
+FROM {catalog}.{schema}.vw_machine_current_status;
+
+-- Top 5 machines by fault risk
+SELECT machine_id, prob_fault_next_5m, anomaly_score, state
+FROM {catalog}.{schema}.vw_machine_current_status
+ORDER BY prob_fault_next_5m DESC
+LIMIT 5;
+
+-- Telemetry lag by machine
+SELECT machine_id, telemetry_lag_seconds, ml_lag_seconds, last_event_time
+FROM {catalog}.{schema}.vw_machine_current_status
+ORDER BY telemetry_lag_seconds DESC;
+
+-- Downtime breakdown by machine
+SELECT machine_id, SUM(time_in_stopped_s + time_in_fault_s) AS downtime_s
+FROM {catalog}.{schema}.vw_machine_health
+WHERE window_end >= current_timestamp() - INTERVAL 1 HOUR
+GROUP BY machine_id;
 """
 
     space_id: Optional[str] = None
@@ -246,24 +284,33 @@ Definitions and behavior:
     else:
         print("No new sample questions to add.")
 
-    instruction_title = "Manufacturing Command Center Context and KPI Definitions"
+    instructions_to_add = [
+        ("Manufacturing Command Center KPI Definitions", instruction_kpi),
+        ("Table and Column Context", instruction_tables),
+        ("Example SQL Query Patterns", instruction_sql),
+    ]
     existing_instruction_titles = set(fetch_existing_instruction_titles(base_url, headers, space_id))
-    if instruction_title not in existing_instruction_titles:
-        response = requests.post(
-            f"{base_url}/api/2.0/data-rooms/{space_id}/instructions",
-            headers=headers,
-            json={
-                "title": instruction_title,
-                "content": genie_instructions,
-                "instruction_type": "TEXT_INSTRUCTION",
-            },
-            timeout=60,
-        )
-        if not response.ok:
-            raise RuntimeError(f"Failed to add instruction: {response.text[:1000]}")
-        print("Added Genie instruction.")
-    else:
-        print("Instruction already exists; skipping.")
+    for title, content in instructions_to_add:
+        if title not in existing_instruction_titles:
+            response = requests.post(
+                f"{base_url}/api/2.0/data-rooms/{space_id}/instructions",
+                headers=headers,
+                json={
+                    "title": title,
+                    "content": content,
+                    "instruction_type": "TEXT_INSTRUCTION",
+                },
+                timeout=60,
+            )
+            if not response.ok:
+                raise RuntimeError(f"Failed to add instruction '{title}': {response.text[:1000]}")
+            print(f"Added Genie instruction: {title}")
+        else:
+            print(f"Instruction already exists: {title}")
+
+    # Benchmarks: add manually via Genie UI (Benchmarks > Add benchmark).
+    # See databricks/genie_benchmarks.md for question + SQL pairs.
+    print("Benchmarks: add manually via Genie UI. See databricks/genie_benchmarks.md for Q&A pairs.")
 
     print(f"GENIE_SPACE_ID={space_id}")
     print(f"GENIE_SPACE_URL=https://{host}/genie/rooms/{space_id}")

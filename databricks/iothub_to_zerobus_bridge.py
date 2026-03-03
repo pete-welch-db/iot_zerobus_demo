@@ -37,6 +37,12 @@ def parse_args() -> argparse.Namespace:
         default="latest",
         help="Kafka/Event Hubs starting offsets mode. Use latest for live demos.",
     )
+    parser.add_argument(
+        "--run-mode",
+        choices=["continuous", "available-now"],
+        default="continuous",
+        help="Streaming runtime mode. Use available-now for one-shot backfill/sweeps.",
+    )
     return parser.parse_args()
 
 
@@ -65,7 +71,10 @@ def ensure_target_table(full_table_name: str) -> None:
           throughput_cpm INT,
           state STRING,
           fault_code STRING,
-          ts STRING
+          ts STRING,
+          power_w DOUBLE,
+          rpm INT,
+          pressure_hpa DOUBLE
         )
         """
     )
@@ -99,6 +108,9 @@ def build_source_dataframe(connection_string: str, starting_offsets: str):
             StructField("state", StringType(), True),
             StructField("fault_code", StringType(), True),
             StructField("ts", StringType(), True),
+            StructField("power_w", DoubleType(), True),
+            StructField("rpm", IntegerType(), True),
+            StructField("pressure_hpa", DoubleType(), True),
         ]
     )
 
@@ -133,6 +145,18 @@ def build_source_dataframe(connection_string: str, starting_offsets: str):
                 F.col("parsed_json.ts").cast("string"),
                 F.date_format(F.col("kafka_timestamp"), "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"),
             ).alias("ts"),
+            F.coalesce(
+                F.col("parsed_json.power_w").cast("double"),
+                F.col("parsed_json.throughput_cpm") * 2.5 + 500,
+            ).alias("power_w"),
+            F.coalesce(
+                F.col("parsed_json.rpm").cast("int"),
+                F.col("parsed_json.throughput_cpm") * 12,
+            ).alias("rpm"),
+            F.coalesce(
+                F.col("parsed_json.pressure_hpa").cast("double"),
+                F.col("parsed_json.temp_c") * 10 + 900,
+            ).alias("pressure_hpa"),
         )
         .where("machine_id IS NOT NULL")
     )
@@ -168,6 +192,9 @@ def make_batch_writer(
                         "state": row["state"],
                         "fault_code": row["fault_code"],
                         "ts": row["ts"],
+                        "power_w": row["power_w"],
+                        "rpm": row["rpm"],
+                        "pressure_hpa": row["pressure_hpa"],
                     }
                 )
                 count += 1
@@ -202,14 +229,15 @@ def main() -> None:
         client_secret=client_secret,
     )
 
-    query = (
-        source_df.writeStream.foreachBatch(writer)
-        .option("checkpointLocation", args.checkpoint_path)
-        .trigger(availableNow=True)
-        .start()
-    )
+    query_builder = source_df.writeStream.foreachBatch(writer).option("checkpointLocation", args.checkpoint_path)
+    if args.run_mode == "available-now":
+        LOGGER.info("Starting bridge in available-now mode (one-shot sweep).")
+        query = query_builder.trigger(availableNow=True).start()
+    else:
+        LOGGER.info("Starting bridge in continuous mode.")
+        query = query_builder.start()
     query.awaitTermination()
-    LOGGER.info("IoT Hub -> Zerobus bridge run completed.")
+    LOGGER.info("IoT Hub -> Zerobus bridge run completed or terminated.")
 
 
 if __name__ == "__main__":

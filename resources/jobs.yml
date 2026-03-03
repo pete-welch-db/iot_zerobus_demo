@@ -5,10 +5,6 @@ resources:
       max_concurrent_runs: 1
       queue:
         enabled: true
-      schedule:
-        quartz_cron_expression: "0/30 * * * * ?"
-        timezone_id: "UTC"
-        pause_status: UNPAUSED
       tasks:
         - task_key: bridge_iothub_to_zerobus
           spark_python_task:
@@ -40,6 +36,8 @@ resources:
               - ${var.iothub_bridge_checkpoint_path}
               - --starting-offsets
               - ${var.iothub_bridge_starting_offsets}
+              - --run-mode
+              - continuous
           environment_key: zerobus
       environments:
         - environment_key: zerobus
@@ -53,10 +51,6 @@ resources:
       max_concurrent_runs: 1
       queue:
         enabled: true
-      schedule:
-        quartz_cron_expression: "0 */1 * * * ?"
-        timezone_id: "UTC"
-        pause_status: UNPAUSED
       tasks:
         - task_key: ensure_medallion_pipeline_running
           pipeline_task:
@@ -229,6 +223,8 @@ resources:
               - ${var.iothub_bridge_checkpoint_path}
               - --starting-offsets
               - ${var.iothub_bridge_starting_offsets}
+              - --run-mode
+              - available-now
           environment_key: zerobus
 
         - task_key: update_medallion_pipeline

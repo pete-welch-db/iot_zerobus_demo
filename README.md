@@ -59,20 +59,15 @@ Arduino-to-Databricks predictive maintenance and OEE demo using Azure IoT Hub, Z
 
 ## Hardware Wiring (Arduino)
 
-- Pots:
-  - `A0` vibration
-  - `A1` temperature
-  - `A2` throughput
-- Buttons (active-low, `INPUT_PULLUP`):
-  - `D2` toggle `RUN`/`STOPPED`
-  - `D3` toggle `FAULT` on/off
-- Optional LEDs:
-  - `D10` RUN
-  - `D11` FAULT
+See `arduino/machine_panel.ino` for detailed wiring comments.
+
+- Pots (10kΩ linear): `A0` vibration, `A1` temperature, `A2` throughput
+- Buttons (momentary, `INPUT_PULLUP`): `D2` Run/Stop, `D3` Manual fault, `D4` Emergency stop
+- LEDs (220Ω series): `D10` RUN (green), `D11` FAULT (red)
 
 Serial CSV format every ~1 second:
 
-`vibration,temp,throughput,state,faultCode`
+`vibration,temp,throughput,state,faultCode,power_w,rpm,pressure_hpa`
 
 ## Edge Setup (Primary Direct Mode)
 
@@ -255,22 +250,27 @@ TARGET=dev MACHINE_ID=MACH_A scripts/demo_go.sh
 # Add virtual fleet
 TARGET=dev scripts/demo_generate.sh
 
-# Stop active/queued runs
+# Stop continuous ingest/DLT and queued runs
 TARGET=dev scripts/demo_stop.sh
 ```
 
-3) Always-on ingestion + pipeline keepalive (recommended for live demo):
+3) Always-on ingest + medallion behavior (recommended for live demo):
 
-- `iothub_to_zerobus_autorun_${bundle.target}` runs every 30 seconds to sweep IoT Hub events into Zerobus/raw.
-- `iot_pipeline_keepalive_${bundle.target}` runs every 5 minutes to ensure the continuous DLT pipeline stays active.
-- `iot_ml_realtime_scoring_${bundle.target}` runs every 1 minute for near-live anomaly/fault updates.
+- `iothub_to_zerobus_autorun_${bundle.target}` is now a long-running continuous bridge job (`--run-mode continuous`) from IoT Hub into raw input table storage.
+- `iot_telemetry_medallion_${bundle.target}` is configured with `continuous: true` and processes new data while active.
+- `iot_pipeline_keepalive_${bundle.target}` is used by `scripts/demo_go.sh` to start/ensure the DLT pipeline when not running.
+- `iot_ml_realtime_scoring_${bundle.target}` remains optional near-live scoring to refresh anomaly/fault outputs.
 
-You can run once to verify jobs are healthy:
+Use `go` to ensure both continuous services are running before the talk track:
 
 ```bash
-databricks bundle run -t dev iothub_to_zerobus_autorun
-databricks bundle run -t dev iot_pipeline_keepalive
+TARGET=dev MACHINE_ID=MACH_A scripts/demo_go.sh
 ```
+
+Troubleshooting:
+- If you suspect duplicate ingest, run `scripts/demo_stop.sh` once, then `scripts/demo_go.sh` once (do not manually start multiple bridge runs).
+- Keep the bridge checkpoint path stable to avoid replay/duplication surprises during a demo.
+- For intentional backfill, run the bridge in one-shot mode (`--run-mode available-now --starting-offsets earliest`) outside the live talk track.
 
 The end-to-end workflow includes preflight checks, Zerobus setup, IoT Hub bridge, medallion refresh, batch+realtime ML scoring, semantic view refresh, UC metric view refresh, Genie refresh, and output validation.
 

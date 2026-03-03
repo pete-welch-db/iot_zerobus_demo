@@ -18,6 +18,9 @@ telemetry_schema = StructType(
         StructField("state", StringType(), True),
         StructField("fault_code", StringType(), True),
         StructField("ts", StringType(), True),
+        StructField("power_w", DoubleType(), True),
+        StructField("rpm", IntegerType(), True),
+        StructField("pressure_hpa", DoubleType(), True),
     ]
 )
 
@@ -48,6 +51,9 @@ def bronze_iot_raw():
         F.col("state").cast("string").alias("state"),
         F.col("fault_code").cast("string").alias("fault_code"),
         F.col("ts").cast("string").alias("ts"),
+        F.coalesce(F.col("power_w").cast("double"), F.lit(None)).alias("power_w"),
+        F.coalesce(F.col("rpm").cast("int"), F.lit(None)).alias("rpm"),
+        F.coalesce(F.col("pressure_hpa").cast("double"), F.lit(None)).alias("pressure_hpa"),
     )
 
     return source_df.select(
@@ -86,6 +92,18 @@ def silver_machine_telemetry():
             F.col("parsed_json.state").cast("string").alias("state"),
             F.col("parsed_json.fault_code").cast("string").alias("fault_code"),
             F.coalesce(
+                F.col("parsed_json.power_w").cast("double"),
+                F.col("parsed_json.throughput_cpm") * 2.5 + 500,
+            ).alias("power_w"),
+            F.coalesce(
+                F.col("parsed_json.rpm").cast("int"),
+                F.col("parsed_json.throughput_cpm") * 12,
+            ).alias("rpm"),
+            F.coalesce(
+                F.col("parsed_json.pressure_hpa").cast("double"),
+                F.col("parsed_json.temp_c") * 10 + 900,
+            ).alias("pressure_hpa"),
+            F.coalesce(
                 F.col("system_properties.iothub-connection-device-id").cast("string"),
                 F.col("parsed_json.machine_id").cast("string"),
             ).alias("iothub_device_id"),
@@ -102,18 +120,21 @@ def silver_machine_telemetry():
     table_properties={"quality": "gold"},
 )
 def gold_machine_health_5m():
-    silver = dlt.read_stream("silver_machine_telemetry").withWatermark("event_time", "10 minutes")
+    silver = dlt.read_stream("silver_machine_telemetry").withWatermark("event_time", "3 minutes")
 
     windowed = silver.groupBy(
         "machine_id",
-        F.window("event_time", "5 minutes").alias("w"),
+        F.window("event_time", "1 minute").alias("w"),
     ).agg(
         F.avg("vibration_mm_s").alias("avg_vibration_mm_s"),
         F.avg("temp_c").alias("avg_temp_c"),
         F.avg("throughput_cpm").alias("avg_throughput_cpm"),
-        F.sum(F.when(F.col("state") == "RUN", F.lit(5)).otherwise(F.lit(0))).alias("time_in_run_s"),
-        F.sum(F.when(F.col("state") == "STOPPED", F.lit(5)).otherwise(F.lit(0))).alias("time_in_stopped_s"),
-        F.sum(F.when(F.col("state") == "FAULT", F.lit(5)).otherwise(F.lit(0))).alias("time_in_fault_s"),
+        F.avg("power_w").alias("avg_power_w"),
+        F.avg("rpm").alias("avg_rpm"),
+        F.avg("pressure_hpa").alias("avg_pressure_hpa"),
+        F.sum(F.when(F.col("state") == "RUN", F.lit(1)).otherwise(F.lit(0))).alias("time_in_run_s"),
+        F.sum(F.when(F.col("state") == "STOPPED", F.lit(1)).otherwise(F.lit(0))).alias("time_in_stopped_s"),
+        F.sum(F.when(F.col("state") == "FAULT", F.lit(1)).otherwise(F.lit(0))).alias("time_in_fault_s"),
         F.avg(
             F.when((F.col("state") == "FAULT") | (F.col("fault_code").isNotNull()), F.lit(1.0)).otherwise(F.lit(0.0))
         ).alias("fault_rate"),
@@ -142,6 +163,9 @@ def gold_machine_health_5m():
         F.col("avg_vibration_mm_s"),
         F.col("avg_temp_c"),
         F.col("avg_throughput_cpm"),
+        F.col("avg_power_w"),
+        F.col("avg_rpm"),
+        F.col("avg_pressure_hpa"),
         F.col("time_in_run_s"),
         F.col("time_in_stopped_s"),
         F.col("time_in_fault_s"),

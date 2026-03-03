@@ -139,6 +139,9 @@ class DeviceRuntime:
             "state": self.state,
             "fault_code": self.fault_code,
             "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "power_w": round(self.throughput_cpm * 2.5 + 500, 1),
+            "rpm": int(self.throughput_cpm * 12),
+            "pressure_hpa": round(self.temp_c * 10 + 900, 1),
         }
         result = self.client.publish(self.topic, payload=json.dumps(payload), qos=1)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
