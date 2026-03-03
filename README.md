@@ -126,6 +126,65 @@ python sender.py
 Both modes should publish the same payload fields:
 `machine_id`, `vibration_mm_s`, `temp_c`, `throughput_cpm`, `state`, `fault_code`, `ts`.
 
+## Scale Testing and Synthetic Training Data
+
+For demo-scale simulation and repeatable fault training datasets, use:
+
+- `edge-python/simulate_fleet_iothub.py`: publish live telemetry for many virtual devices to Azure IoT Hub.
+- `edge-python/generate_fault_training_data.py`: generate large synthetic datasets with threshold-driven fault behavior.
+
+### 1) Simulate many devices to IoT Hub
+
+Create a device manifest from `edge-python/devices.example.json` with real IoT Hub device IDs/keys.
+
+```bash
+cd edge-python
+python simulate_fleet_iothub.py \
+  --iothub-name "iothub-zerobus-demo-welch" \
+  --devices-file "devices.example.json" \
+  --duration-seconds 600 \
+  --message-rate-hz 1.0 \
+  --fault-period-seconds 180
+```
+
+### 1a) Auto-provision IoT Hub devices for simulator
+
+Use Azure CLI to create or reuse device identities and emit a simulator manifest.
+
+```bash
+cd edge-python
+python autoprovision_iothub_devices.py \
+  --iothub-name "iothub-zerobus-demo-welch" \
+  --count 250 \
+  --device-prefix "sim-device" \
+  --machine-prefix "MACH" \
+  --padding 4 \
+  --output-file "devices.json"
+```
+
+Then run:
+
+```bash
+python simulate_fleet_iothub.py \
+  --iothub-name "iothub-zerobus-demo-welch" \
+  --devices-file "devices.json" \
+  --duration-seconds 600
+```
+
+### 2) Generate synthetic training data (fault ramps)
+
+```bash
+cd edge-python
+python generate_fault_training_data.py \
+  --num-devices 250 \
+  --samples-per-device 8000 \
+  --sample-interval-seconds 5 \
+  --output-jsonl "../data/synthetic_fault_training.jsonl" \
+  --output-csv "../data/synthetic_fault_training.csv"
+```
+
+The generated rows include `threshold_crossed` and `label_fault_next_5m` to support supervised predictive-maintenance experiments.
+
 ## Azure Prerequisites
 
 Follow `infra/azure_iot_hub_setup.md` to:
