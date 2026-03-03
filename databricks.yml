@@ -57,6 +57,9 @@ variables:
   iothub_bridge_checkpoint_path:
     description: Checkpoint location for IoT Hub to Zerobus bridge streaming job
     default: dbfs:/tmp/iot_zerobus_demo/checkpoints/iothub_bridge
+  iothub_bridge_starting_offsets:
+    description: Kafka/Event Hubs starting offsets mode for IoT Hub bridge (latest for live demo, earliest for backfill)
+    default: latest
   zerobus_run_smoke_ingest:
     description: Whether zerobus setup job writes a single test record
     default: "false"

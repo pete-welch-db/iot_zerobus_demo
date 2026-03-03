@@ -102,3 +102,26 @@ SELECT
   fault_inference_type
 FROM vw_machine_current_status
 ORDER BY ml_lag_seconds DESC, telemetry_lag_seconds DESC;
+
+-- 10) Device health + latency table (bottom widget)
+SELECT
+  s.machine_id,
+  d.line_name,
+  s.state,
+  s.last_event_time,
+  s.telemetry_lag_seconds,
+  s.ml_lag_seconds,
+  s.temp_c,
+  s.vibration_mm_s,
+  s.throughput_cpm,
+  s.anomaly_score,
+  s.prob_fault_next_5m,
+  CASE
+    WHEN s.prob_fault_next_5m >= 0.7 THEN 'HIGH'
+    WHEN s.prob_fault_next_5m >= 0.4 THEN 'MEDIUM'
+    ELSE 'LOW'
+  END AS fault_band
+FROM vw_machine_current_status s
+LEFT JOIN dim_machine d
+  ON s.machine_id = d.machine_id
+ORDER BY s.telemetry_lag_seconds ASC, s.ml_lag_seconds ASC, s.last_event_time DESC;

@@ -6,7 +6,7 @@ resources:
       queue:
         enabled: true
       schedule:
-        quartz_cron_expression: "0 */1 * * * ?"
+        quartz_cron_expression: "0/30 * * * * ?"
         timezone_id: "UTC"
         pause_status: UNPAUSED
       tasks:
@@ -38,6 +38,8 @@ resources:
               - ${var.iothub_eventhubs_connection_secret_key}
               - --checkpoint-path
               - ${var.iothub_bridge_checkpoint_path}
+              - --starting-offsets
+              - ${var.iothub_bridge_starting_offsets}
           environment_key: zerobus
       environments:
         - environment_key: zerobus
@@ -52,7 +54,7 @@ resources:
       queue:
         enabled: true
       schedule:
-        quartz_cron_expression: "0 */5 * * * ?"
+        quartz_cron_expression: "0 */1 * * * ?"
         timezone_id: "UTC"
         pause_status: UNPAUSED
       tasks:
@@ -86,7 +88,7 @@ resources:
               - --train-model
               - "false"
               - --realtime-lookback-minutes
-              - "10"
+              - "3"
           environment_key: default
         - task_key: fault_realtime
           depends_on:
@@ -105,7 +107,7 @@ resources:
               - --train-model
               - "false"
               - --realtime-lookback-minutes
-              - "10"
+              - "3"
           environment_key: default
         - task_key: refresh_semantic_views
           depends_on:
@@ -225,6 +227,8 @@ resources:
               - ${var.iothub_eventhubs_connection_secret_key}
               - --checkpoint-path
               - ${var.iothub_bridge_checkpoint_path}
+              - --starting-offsets
+              - ${var.iothub_bridge_starting_offsets}
           environment_key: zerobus
 
         - task_key: update_medallion_pipeline

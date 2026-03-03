@@ -31,6 +31,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--iothub-connection-secret-scope", required=True)
     parser.add_argument("--iothub-connection-secret-key", required=True)
     parser.add_argument("--checkpoint-path", required=True)
+    parser.add_argument(
+        "--starting-offsets",
+        choices=["earliest", "latest"],
+        default="latest",
+        help="Kafka/Event Hubs starting offsets mode. Use latest for live demos.",
+    )
     return parser.parse_args()
 
 
@@ -82,7 +88,7 @@ def parse_eventhubs_connection_string(connection_string: str) -> tuple[str, str]
     return bootstrap_servers, entity_path
 
 
-def build_source_dataframe(connection_string: str):
+def build_source_dataframe(connection_string: str, starting_offsets: str):
     bootstrap_servers, topic = parse_eventhubs_connection_string(connection_string)
     telemetry_schema = StructType(
         [
@@ -100,7 +106,7 @@ def build_source_dataframe(connection_string: str):
         spark.readStream.format("kafka")
         .option("kafka.bootstrap.servers", bootstrap_servers)
         .option("subscribe", topic)
-        .option("startingOffsets", "earliest")
+        .option("startingOffsets", starting_offsets)
         .option("kafka.security.protocol", "SASL_SSL")
         .option("kafka.sasl.mechanism", "PLAIN")
         .option(
@@ -187,7 +193,7 @@ def main() -> None:
     workspace_url = normalize_workspace_url(args.workspace_url)
     ingest_url = args.ingest_url if args.ingest_url.startswith(("http://", "https://")) else f"https://{args.ingest_url}"
 
-    source_df = build_source_dataframe(iothub_connection)
+    source_df = build_source_dataframe(iothub_connection, args.starting_offsets)
     writer = make_batch_writer(
         ingest_url=ingest_url,
         workspace_url=workspace_url,

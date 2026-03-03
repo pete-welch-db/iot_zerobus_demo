@@ -244,10 +244,26 @@ databricks bundle run -t dev iot_demo_realtime_workflow
 databricks bundle run -t dev iot_ml_realtime_scoring
 ```
 
+### Demo control commands (`go`, `generate`, `stop`)
+
+Use scripted commands for deterministic demo execution:
+
+```bash
+# Physical device only (MACH_A)
+TARGET=dev MACHINE_ID=MACH_A scripts/demo_go.sh
+
+# Add virtual fleet
+TARGET=dev scripts/demo_generate.sh
+
+# Stop active/queued runs
+TARGET=dev scripts/demo_stop.sh
+```
+
 3) Always-on ingestion + pipeline keepalive (recommended for live demo):
 
-- `iothub_to_zerobus_autorun_${bundle.target}` runs every minute to sweep IoT Hub events into Zerobus/raw.
+- `iothub_to_zerobus_autorun_${bundle.target}` runs every 30 seconds to sweep IoT Hub events into Zerobus/raw.
 - `iot_pipeline_keepalive_${bundle.target}` runs every 5 minutes to ensure the continuous DLT pipeline stays active.
+- `iot_ml_realtime_scoring_${bundle.target}` runs every 1 minute for near-live anomaly/fault updates.
 
 You can run once to verify jobs are healthy:
 
@@ -323,6 +339,22 @@ UC metric views:
 2. If direct publish drops, keep Arduino running and start fallback Python sender.
 3. Reuse the same `DEVICE_ID` and payload schema to avoid downstream changes.
 4. Continue dashboard/Genie demo without changing Databricks pipeline assets.
+
+### Demo-day quick recovery (`MACH_A`)
+
+- If `MACH_A` shows `STOPPED` and should be running:
+  1. Press the RUN/STOP button once on the Arduino.
+  2. Run `TARGET=dev MACHINE_ID=MACH_A scripts/demo_go.sh`.
+  3. Refresh dashboard and verify `state = RUN` in `vw_machine_current_status`.
+- If you need to prove fault response:
+  - Raise temperature/vibration pots above threshold.
+  - Confirm `FAULT` appears in telemetry and `prob_fault_next_5m` rises after realtime ML refresh.
+
+## Demo SLO Targets
+
+- Telemetry visible in dashboard: `< 30-60s` after bridge run.
+- Fleet average `telemetry_lag_seconds`: `< 60s`.
+- Fleet average `ml_lag_seconds`: `< 90s` after realtime scoring.
 
 ## Notes
 

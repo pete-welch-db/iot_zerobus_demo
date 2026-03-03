@@ -36,6 +36,13 @@
       ]
     },
     {
+      "name": "ds_device_health_latency",
+      "displayName": "Device Health + Latency",
+      "queryLines": [
+        "SELECT s.machine_id, d.line_name, s.state, s.last_event_time, s.telemetry_lag_seconds, s.ml_lag_seconds, s.temp_c, s.vibration_mm_s, s.throughput_cpm, s.anomaly_score, s.prob_fault_next_5m, CASE WHEN s.prob_fault_next_5m >= 0.7 THEN 'HIGH' WHEN s.prob_fault_next_5m >= 0.4 THEN 'MEDIUM' ELSE 'LOW' END AS fault_band FROM welch.iot_demo_dev.vw_machine_current_status s LEFT JOIN welch.iot_demo_dev.dim_machine d ON s.machine_id = d.machine_id"
+      ]
+    },
+    {
       "name": "ds_downtime",
       "displayName": "Downtime by Window",
       "queryLines": [
@@ -671,6 +678,136 @@
             "x": 6,
             "y": 8,
             "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "device_health_latency_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_device_health_latency",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "line_name",
+                      "expression": "`line_name`"
+                    },
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "fault_band",
+                      "expression": "`fault_band`"
+                    },
+                    {
+                      "name": "telemetry_lag_seconds",
+                      "expression": "`telemetry_lag_seconds`"
+                    },
+                    {
+                      "name": "ml_lag_seconds",
+                      "expression": "`ml_lag_seconds`"
+                    },
+                    {
+                      "name": "anomaly_score",
+                      "expression": "`anomaly_score`"
+                    },
+                    {
+                      "name": "prob_fault_next_5m",
+                      "expression": "`prob_fault_next_5m`"
+                    },
+                    {
+                      "name": "temp_c",
+                      "expression": "`temp_c`"
+                    },
+                    {
+                      "name": "vibration_mm_s",
+                      "expression": "`vibration_mm_s`"
+                    },
+                    {
+                      "name": "throughput_cpm",
+                      "expression": "`throughput_cpm`"
+                    },
+                    {
+                      "name": "last_event_time",
+                      "expression": "`last_event_time`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "machine_id",
+                    "displayName": "Machine"
+                  },
+                  {
+                    "fieldName": "line_name",
+                    "displayName": "Line"
+                  },
+                  {
+                    "fieldName": "state",
+                    "displayName": "State"
+                  },
+                  {
+                    "fieldName": "fault_band",
+                    "displayName": "Risk Band"
+                  },
+                  {
+                    "fieldName": "telemetry_lag_seconds",
+                    "displayName": "Telemetry Lag (s)"
+                  },
+                  {
+                    "fieldName": "ml_lag_seconds",
+                    "displayName": "ML Lag (s)"
+                  },
+                  {
+                    "fieldName": "anomaly_score",
+                    "displayName": "Anomaly"
+                  },
+                  {
+                    "fieldName": "prob_fault_next_5m",
+                    "displayName": "Fault Prob"
+                  },
+                  {
+                    "fieldName": "temp_c",
+                    "displayName": "Temp C"
+                  },
+                  {
+                    "fieldName": "vibration_mm_s",
+                    "displayName": "Vibration"
+                  },
+                  {
+                    "fieldName": "throughput_cpm",
+                    "displayName": "Throughput"
+                  },
+                  {
+                    "fieldName": "last_event_time",
+                    "displayName": "Last Event"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Device Health + Latency"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
             "height": 4
           }
         }
