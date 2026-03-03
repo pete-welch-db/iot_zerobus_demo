@@ -10,6 +10,12 @@ Automated deployment script: `databricks/deploy_genie_space.py`.
 Use SQL warehouse: `148ccb90800933a1`
 
 ## Included Objects (Trusted)
+- `mv_machine_telemetry`
+- `mv_machine_oee`
+- `mv_machine_downtime`
+- `mv_machine_risk`
+- `mv_machine_freshness`
+- `mv_machine_current`
 - `vw_machine_telemetry_live`
 - `vw_machine_health`
 - `vw_machine_current_status`

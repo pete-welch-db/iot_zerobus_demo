@@ -120,6 +120,12 @@ def main() -> None:
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
     table_identifiers = [
+        f"{catalog}.{schema}.mv_machine_telemetry",
+        f"{catalog}.{schema}.mv_machine_oee",
+        f"{catalog}.{schema}.mv_machine_downtime",
+        f"{catalog}.{schema}.mv_machine_risk",
+        f"{catalog}.{schema}.mv_machine_freshness",
+        f"{catalog}.{schema}.mv_machine_current",
         f"{catalog}.{schema}.vw_machine_telemetry_live",
         f"{catalog}.{schema}.vw_machine_health",
         f"{catalog}.{schema}.vw_machine_current_status",
@@ -131,6 +137,7 @@ def main() -> None:
         "Show downtime for each machine in the last 60 minutes.",
         "Which machines currently have anomaly score above 0.7?",
         "What is the latest OEE for MACH_A?",
+        "Show OEE by machine for the last 6 windows using metric view measures.",
         "Compare availability, performance, and quality for all machines right now.",
         "Show trend of vibration and temperature for the last hour for MACH_A.",
         "Which line has the highest average fault risk today?",
@@ -145,6 +152,7 @@ Definitions and behavior:
 - "anomaly" means anomaly_score, with threshold >= 0.7 unless user specifies otherwise.
 - "downtime" means time_in_stopped_s + time_in_fault_s.
 - "OEE" means oee_pct from vw_machine_health or vw_machine_current_status.
+- Prefer Unity Catalog metric views (mv_machine_*) for KPI aggregations when possible.
 - For "current" questions, default to latest last_event_time/window_end rows.
 - Include machine_id in answers, and use dim_machine.line_name when relevant.
 - For freshness questions, use telemetry_lag_seconds and ml_lag_seconds.

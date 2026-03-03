@@ -173,43 +173,19 @@ databricks bundle validate -t dev
 databricks bundle deploy -t dev
 ```
 
-1) Create/update Zerobus ingest connector and raw target table:
-
-```bash
-databricks bundle run -t dev zerobus_connector_setup
-```
-
-2) Start/refresh medallion pipeline:
-
-```bash
-databricks bundle run -t dev iot_pipeline_refresh
-```
-
-3) Run ML scoring job:
-
-```bash
-databricks bundle run -t dev iot_ml_scoring_manual
-```
-
-4) Refresh semantic views:
-
-```bash
-databricks bundle run -t dev semantic_layer_refresh
-```
-
-5) Create/update Genie Space (idempotent):
-
-```bash
-databricks bundle run -t dev genie_space_refresh
-```
-
-6) One-click end-to-end demo workflow:
+1) Run one-click end-to-end demo workflow (recommended):
 
 ```bash
 databricks bundle run -t dev iot_demo_realtime_workflow
 ```
 
-Create/update SQL views using `databricks/sql_views.sql` (or run `semantic_layer_refresh` job above).
+2) Start continuous near-real-time ML scoring (optional):
+
+```bash
+databricks bundle run -t dev iot_ml_realtime_scoring
+```
+
+The end-to-end workflow includes preflight checks, Zerobus setup, IoT Hub bridge, medallion refresh, batch+realtime ML scoring, semantic view refresh, UC metric view refresh, Genie refresh, and output validation.
 
 ## Expected Tables and Views
 
@@ -226,6 +202,15 @@ Views:
 - `vw_machine_health`
 - `dim_machine`
 - `vw_machine_current_status`
+
+UC metric views:
+
+- `mv_machine_telemetry`
+- `mv_machine_oee`
+- `mv_machine_downtime`
+- `mv_machine_risk`
+- `mv_machine_freshness`
+- `mv_machine_current`
 
 ## Manufacturing Command Center Dashboard + Genie
 
