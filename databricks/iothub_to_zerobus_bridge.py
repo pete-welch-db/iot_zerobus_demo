@@ -111,7 +111,10 @@ def build_source_dataframe(connection_string: str):
     )
 
     parsed_df = (
-        kafka_df.select(F.col("value").cast("string").alias("raw_body"))
+        kafka_df.select(
+            F.col("value").cast("string").alias("raw_body"),
+            F.col("timestamp").cast("timestamp").alias("kafka_timestamp"),
+        )
         .withColumn("parsed_json", F.from_json(F.col("raw_body"), telemetry_schema))
         .select(
             F.col("parsed_json.machine_id").cast("string").alias("machine_id"),
@@ -122,7 +125,7 @@ def build_source_dataframe(connection_string: str):
             F.col("parsed_json.fault_code").cast("string").alias("fault_code"),
             F.coalesce(
                 F.col("parsed_json.ts").cast("string"),
-                F.date_format(F.current_timestamp(), "yyyy-MM-dd HH:mm:ss"),
+                F.date_format(F.col("kafka_timestamp"), "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"),
             ).alias("ts"),
         )
         .where("machine_id IS NOT NULL")

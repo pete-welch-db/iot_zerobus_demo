@@ -112,6 +112,8 @@ def main() -> None:
           machine_id,
           CASE
             WHEN machine_id = 'MACH_A' THEN 'Packaging Line A'
+            WHEN machine_id RLIKE '^MACH_[0-9]+$'
+              THEN CONCAT('Virtual Line ', regexp_extract(machine_id, '^MACH_([0-9]+)$', 1))
             ELSE 'Unknown Line'
           END AS line_name
         FROM {catalog}.{schema}.silver_machine_telemetry

@@ -44,7 +44,11 @@ def ensure_device_identity(iothub_name: str, device_id: str) -> Dict:
         return run_az(create_cmd)
     except RuntimeError as exc:
         message = str(exc).lower()
-        if "already exists" not in message and "conflict" not in message:
+        if (
+            "already exists" not in message
+            and "devicealreadyexists" not in message
+            and "conflict" not in message
+        ):
             raise
 
         show_cmd = [

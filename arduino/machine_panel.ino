@@ -20,6 +20,8 @@ const int LED_FAULT = 11;
 
 const unsigned long SAMPLE_INTERVAL_MS = 1000;
 const unsigned long DEBOUNCE_MS = 40;
+const float TEMP_FAULT_THRESHOLD_C = 85.0;
+const float VIBRATION_FAULT_THRESHOLD_MM_S = 9.5;
 
 // ---------- WiFi / IoT Hub Direct Publish Config ----------
 // Keep secrets out of source control in real usage.
@@ -39,8 +41,8 @@ char mqttUsername[192];
 WiFiSSLClient sslClient;
 PubSubClient mqttClient(sslClient);
 
-MachineState currentState = STOPPED;
-MachineState previousNonFaultState = STOPPED;
+MachineState currentState = RUN;
+MachineState previousNonFaultState = RUN;
 
 unsigned long lastEmitMs = 0;
 unsigned long lastRunEdgeMs = 0;
@@ -199,7 +201,9 @@ TelemetrySample readSample() {
   float vibration = mapVibrationMmS(rawVib);
   float tempC = mapTempC(rawTemp);
   int throughput = mapThroughputCpm(rawTput);
+  const char* emittedState = stateToString(currentState);
   const char* faultCode = "NONE";
+  bool thresholdFault = (tempC >= TEMP_FAULT_THRESHOLD_C) || (vibration >= VIBRATION_FAULT_THRESHOLD_MM_S);
 
   if (currentState == STOPPED) {
     throughput = 0;
@@ -209,12 +213,18 @@ TelemetrySample readSample() {
     // Keep FAULT vibration obviously abnormal.
     vibration = max(vibration + 2.5, 10.5);
     faultCode = "OVERTEMP";
+  } else if (currentState == RUN && thresholdFault) {
+    // Auto-surface process risk as FAULT when pots exceed limits.
+    emittedState = "FAULT";
+    throughput = 0;
+    faultCode = tempC >= TEMP_FAULT_THRESHOLD_C ? "OVERTEMP" : "VIBRATION";
   }
 
-  digitalWrite(LED_RUN, currentState == RUN ? HIGH : LOW);
-  digitalWrite(LED_FAULT, currentState == FAULT ? HIGH : LOW);
+  bool emittedFault = strcmp(emittedState, "FAULT") == 0;
+  digitalWrite(LED_RUN, strcmp(emittedState, "RUN") == 0 ? HIGH : LOW);
+  digitalWrite(LED_FAULT, emittedFault ? HIGH : LOW);
 
-  TelemetrySample s = {vibration, tempC, throughput, stateToString(currentState), faultCode};
+  TelemetrySample s = {vibration, tempC, throughput, emittedState, faultCode};
   return s;
 }
 
