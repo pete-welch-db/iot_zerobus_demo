@@ -1,0 +1,19 @@
+{
+  "name": "iot_zerobus_iothub_ingest",
+  "description": "Zerobus/Lakeflow ingestion from Azure IoT Hub built-in Event Hubs-compatible endpoint",
+  "source": {
+    "type": "azure_eventhubs_compatible",
+    "consumer_group": "zerobus-lakeflow",
+    "connection_string_secret_scope": "{{secrets.scope}}",
+    "connection_string_secret_key": "{{secrets.eventhubs_connection_key}}"
+  },
+  "target": {
+    "catalog": "{{uc.catalog}}",
+    "schema": "{{uc.schema}}",
+    "table": "raw_iothub_messages"
+  },
+  "options": {
+    "starting_position": "latest",
+    "max_events_per_trigger": 5000
+  }
+}

@@ -1,0 +1,75 @@
+resources:
+  jobs:
+    zerobus_connector_setup:
+      name: zerobus_connector_setup_${bundle.target}
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+      tasks:
+        - task_key: setup_zerobus_ingest
+          spark_python_task:
+            python_file: ../zerobus/ZEROBUS_INGEST_2026-03-03T15_04_07.404Z.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+              - --table
+              - ${var.raw_input_table}
+              - --workspace-id
+              - ${var.zerobus_workspace_id}
+              - --workspace-url
+              - ${var.zerobus_workspace_url}
+              - --workspace-region
+              - ${var.zerobus_workspace_region}
+              - --ingest-url
+              - ${var.zerobus_ingest_url}
+              - --sp-client-id-secret-scope
+              - ${var.zerobus_secret_scope}
+              - --sp-client-id-secret-key
+              - ${var.zerobus_sp_client_id_key}
+              - --sp-client-secret-secret-scope
+              - ${var.zerobus_secret_scope}
+              - --sp-client-secret-secret-key
+              - ${var.zerobus_sp_client_secret_key}
+              - --run-smoke-ingest
+              - ${var.zerobus_run_smoke_ingest}
+          environment_key: zerobus
+      environments:
+        - environment_key: zerobus
+          spec:
+            environment_version: "2"
+            dependencies:
+              - databricks-zerobus-ingest-sdk
+
+    iot_pipeline_refresh:
+      name: iot_pipeline_refresh_${bundle.target}
+      tasks:
+        - task_key: update_medallion_pipeline
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.iot_telemetry_medallion.id}
+            full_refresh: false
+
+    iot_ml_scoring_manual:
+      name: iot_ml_scoring_manual_${bundle.target}
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+      tasks:
+        - task_key: anomaly_scoring
+          spark_python_task:
+            python_file: ../databricks/ml_anomaly_notebook.py
+          environment_key: default
+        - task_key: fault_prediction
+          depends_on:
+            - task_key: anomaly_scoring
+          spark_python_task:
+            python_file: ../databricks/ml_state_prediction_notebook.py
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - mlflow
+              - scikit-learn

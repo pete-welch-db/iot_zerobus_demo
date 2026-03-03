@@ -1,0 +1,64 @@
+bundle:
+  name: iot_zerobus_demo
+
+include:
+  - resources/pipelines.yml
+  - resources/jobs.yml
+
+variables:
+  catalog:
+    description: Unity Catalog name
+    default: welch
+  schema:
+    description: Unity Catalog schema name
+    default: iot_demo
+  raw_input_table:
+    description: Zerobus/Lakeflow raw source table
+    default: raw_iothub_messages
+  target_throughput_cpm:
+    description: Throughput target for performance KPI
+    default: "100"
+  mlflow_experiment:
+    description: MLflow experiment path
+    default: /Shared/iot_zerobus_demo
+  zerobus_workspace_id:
+    description: Databricks workspace ID for Zerobus endpoint derivation
+    default: "984752964297111"
+  zerobus_workspace_url:
+    description: Databricks workspace URL used by Zerobus SDK
+    default: https://adb-984752964297111.11.azuredatabricks.net
+  zerobus_workspace_region:
+    description: Workspace region used for endpoint derivation if ingest URL is not provided
+    default: eastus2
+  zerobus_ingest_url:
+    description: Optional explicit Zerobus ingest URL (overrides workspace_id/region derivation when set)
+    default: https://984752964297111.zerobus.eastus2.azuredatabricks.net
+  zerobus_secret_scope:
+    description: Secret scope containing service principal credentials
+    default: iot_zerobus_demo
+  zerobus_sp_client_id_key:
+    description: Secret key name for service principal client id
+    default: zerobus_sp_client_id
+  zerobus_sp_client_secret_key:
+    description: Secret key name for service principal client secret
+    default: zerobus_sp_client_secret
+  zerobus_run_smoke_ingest:
+    description: Whether zerobus setup job writes a single test record
+    default: "false"
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: welch
+      schema: iot_demo_dev
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: welch
+      schema: iot_demo

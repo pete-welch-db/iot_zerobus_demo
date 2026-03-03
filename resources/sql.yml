@@ -1,0 +1,83 @@
+resources:
+  queries:
+    create_iot_views:
+      name: create_iot_views_${bundle.target}
+      description: Creates curated telemetry and machine health SQL views.
+      query: |
+        USE CATALOG ${var.catalog};
+        CREATE SCHEMA IF NOT EXISTS ${var.schema};
+        USE SCHEMA ${var.schema};
+        
+        -- The SQL below mirrors databricks/sql_views.sql with catalog/schema already in context.
+        CREATE OR REPLACE VIEW vw_machine_telemetry_live AS
+        SELECT
+          event_time,
+          machine_id,
+          vibration_mm_s,
+          temp_c,
+          throughput_cpm,
+          state,
+          fault_code,
+          iothub_device_id
+        FROM silver_machine_telemetry
+        WHERE event_time >= current_timestamp() - INTERVAL 2 HOURS;
+        
+        CREATE OR REPLACE VIEW vw_machine_health AS
+        WITH anomaly_latest AS (
+          SELECT machine_id, event_time, anomaly_score, is_anomaly
+          FROM (
+            SELECT
+              machine_id,
+              event_time,
+              anomaly_score,
+              is_anomaly,
+              row_number() OVER (PARTITION BY machine_id ORDER BY event_time DESC) AS rn
+            FROM ml_anomaly_scores
+          )
+          WHERE rn = 1
+        ),
+        fault_pred_latest AS (
+          SELECT machine_id, event_time, prob_fault_next_5m, predicted_fault_next_5m
+          FROM (
+            SELECT
+              machine_id,
+              event_time,
+              prob_fault_next_5m,
+              predicted_fault_next_5m,
+              row_number() OVER (PARTITION BY machine_id ORDER BY event_time DESC) AS rn
+            FROM ml_fault_predictions
+          )
+          WHERE rn = 1
+        )
+        SELECT
+          g.machine_id,
+          g.window_start,
+          g.window_end,
+          g.avg_vibration_mm_s,
+          g.avg_temp_c,
+          g.avg_throughput_cpm,
+          g.time_in_run_s,
+          g.time_in_stopped_s,
+          g.time_in_fault_s,
+          g.availability_pct,
+          g.performance_pct,
+          g.quality_pct,
+          g.oee_pct,
+          COALESCE(a.anomaly_score, g.anomaly_score) AS anomaly_score,
+          COALESCE(a.is_anomaly, g.is_anomaly) AS is_anomaly,
+          COALESCE(f.prob_fault_next_5m, g.prob_fault_next_5m) AS prob_fault_next_5m,
+          COALESCE(f.predicted_fault_next_5m, COALESCE(f.prob_fault_next_5m, g.prob_fault_next_5m) >= 0.5) AS predicted_fault_next_5m
+        FROM gold_machine_health_5m g
+        LEFT JOIN anomaly_latest a
+          ON g.machine_id = a.machine_id
+        LEFT JOIN fault_pred_latest f
+          ON g.machine_id = f.machine_id;
+        
+        CREATE OR REPLACE VIEW dim_machine AS
+        SELECT DISTINCT
+          machine_id,
+          CASE
+            WHEN machine_id = 'MACH_A' THEN 'Packaging Line A'
+            ELSE 'Unknown Line'
+          END AS line_name
+        FROM silver_machine_telemetry;
