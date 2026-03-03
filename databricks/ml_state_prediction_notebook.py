@@ -47,6 +47,11 @@ _SELECT_COLS = ["machine_id", "event_time"] + feature_cols_all + ["fault_code"]
 HORIZON_SECONDS = 300
 
 
+def _feature_struct():
+    # Preserve feature names for sklearn ColumnTransformer inside MLflow pyfunc.
+    return F.struct(*[F.col(c).alias(c) for c in feature_cols_all])
+
+
 def _build_labeled_spark_df(source_df):
     """Label rows with whether a FAULT occurs within the next 5 minutes using Spark window functions."""
     w_future = (
@@ -178,7 +183,7 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
 
         scored_df = (
             source_sdf
-            .withColumn("prob_fault_next_5m", predict_udf(*[F.col(c) for c in feature_cols_all]))
+            .withColumn("prob_fault_next_5m", predict_udf(_feature_struct()))
             .withColumn("predicted_fault_next_5m", F.col("prob_fault_next_5m") >= 0.5)
             .withColumn("inference_type", F.lit(mode))
             .withColumn("model_run_id", F.lit(model_run_id))
@@ -193,17 +198,21 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
 
         with mlflow.start_run(run_name=f"iot_fault_inference_{mode}", nested=True):
             mlflow.set_tags({"task": "fault_inference", "inference_type": mode})
+            machine_count = scored_df.select("machine_id").distinct().count()
             stats = scored_df.agg(
                 F.avg("prob_fault_next_5m").alias("mean_prob"),
                 F.avg(F.col("predicted_fault_next_5m").cast("double")).alias("high_risk_rate"),
             ).first()
-            mlflow.log_params({"inference_type": mode, "rows_scored": row_count})
+            mlflow.log_params(
+                {"inference_type": mode, "rows_scored": row_count, "machines_scored_mode": machine_count}
+            )
             mlflow.log_metrics(
                 {
                     "high_risk_rate": float(stats["high_risk_rate"] or 0),
                     "mean_fault_probability": float(stats["mean_prob"] or 0),
                 }
             )
+            print(f"[fault:{mode}] rows_scored={row_count} machines_scored={machine_count}")
         scored_segments.append(mode)
 
     if not scored_segments:

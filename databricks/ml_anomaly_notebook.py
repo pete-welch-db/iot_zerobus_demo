@@ -41,6 +41,11 @@ artifact_path = "anomaly_pipeline_model"
 _SELECT_COLS = ["machine_id", "event_time"] + feature_cols + ["state"]
 
 
+def _feature_struct():
+    # Keep feature names stable when invoking MLflow pyfunc model.
+    return F.struct(*[F.col(c).alias(c) for c in feature_cols])
+
+
 def _training_pdf() -> pd.DataFrame:
     source_df = (
         spark.table(silver_table)
@@ -159,7 +164,7 @@ with mlflow.start_run(run_name=f"iot_anomaly_pipeline_{inference_mode}"):
 
         scored_df = (
             score_df
-            .withColumn("raw_decision", predict_udf(*[F.col(c) for c in feature_cols]))
+            .withColumn("raw_decision", predict_udf(_feature_struct()))
             .withColumn("model_score", F.lit(1.0) / (F.lit(1.0) + F.exp(F.lit(4.0) * F.col("raw_decision"))))
             .withColumn(
                 "rule_flag",
@@ -189,17 +194,21 @@ with mlflow.start_run(run_name=f"iot_anomaly_pipeline_{inference_mode}"):
 
         with mlflow.start_run(run_name=f"iot_anomaly_inference_{mode}", nested=True):
             mlflow.set_tags({"task": "anomaly_inference", "inference_type": mode})
+            machine_count = scored_df.select("machine_id").distinct().count()
             stats = scored_df.agg(
                 F.avg("anomaly_score").alias("mean_score"),
                 F.avg(F.col("is_anomaly").cast("double")).alias("anomaly_rate"),
             ).first()
-            mlflow.log_params({"inference_type": mode, "rows_scored": row_count})
+            mlflow.log_params(
+                {"inference_type": mode, "rows_scored": row_count, "machines_scored_mode": machine_count}
+            )
             mlflow.log_metrics(
                 {
                     "anomaly_rate": float(stats["anomaly_rate"] or 0),
                     "mean_anomaly_score": float(stats["mean_score"] or 0),
                 }
             )
+            print(f"[anomaly:{mode}] rows_scored={row_count} machines_scored={machine_count}")
         scored_segments.append(mode)
 
     if not scored_segments:

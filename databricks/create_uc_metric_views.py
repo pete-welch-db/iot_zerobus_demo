@@ -49,6 +49,14 @@ def main() -> None:
               expr: AVG(vibration_mm_s)
             - name: Avg Throughput CPM
               expr: AVG(throughput_cpm)
+            - name: Avg Load Pct
+              expr: AVG(load_pct)
+            - name: Avg Power kW
+              expr: AVG(power_kw)
+            - name: Avg Pressure bar
+              expr: AVG(pressure_bar)
+            - name: Avg Flow LPM
+              expr: AVG(flow_rate_lpm)
         $$
         """
     )
@@ -191,12 +199,20 @@ def main() -> None:
               expr: AVG(vibration_mm_s)
             - name: Current Throughput CPM
               expr: AVG(throughput_cpm)
+            - name: Current Load Pct
+              expr: AVG(load_pct)
             - name: Current OEE Pct
               expr: AVG(oee_pct)
             - name: Current Fault Risk
               expr: AVG(prob_fault_next_5m)
             - name: Current Anomaly Score
               expr: AVG(anomaly_score)
+            - name: Current Power kW
+              expr: AVG(power_kw)
+            - name: Current Pressure bar
+              expr: AVG(pressure_bar)
+            - name: Current Flow LPM
+              expr: AVG(flow_rate_lpm)
         $$
         """
     )

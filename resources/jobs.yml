@@ -37,7 +37,7 @@ resources:
               - --starting-offsets
               - ${var.iothub_bridge_starting_offsets}
               - --run-mode
-              - continuous
+              - available-now
           environment_key: zerobus
       environments:
         - environment_key: zerobus
@@ -78,9 +78,11 @@ resources:
               - --mlflow-experiment
               - ${var.mlflow_experiment}
               - --inference-mode
-              - realtime
+              - both
               - --train-model
               - "false"
+              - --batch-lookback-hours
+              - "24"
               - --realtime-lookback-minutes
               - "3"
           environment_key: default
@@ -97,9 +99,11 @@ resources:
               - --mlflow-experiment
               - ${var.mlflow_experiment}
               - --inference-mode
-              - realtime
+              - both
               - --train-model
               - "false"
+              - --batch-lookback-hours
+              - "24"
               - --realtime-lookback-minutes
               - "3"
           environment_key: default

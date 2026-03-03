@@ -72,6 +72,12 @@ def ensure_target_table(full_table_name: str) -> None:
           rpm INT,
           current_amps DOUBLE,
           humidity_pct DOUBLE,
+          load_pct DOUBLE,
+          power_kw DOUBLE,
+          power_factor DOUBLE,
+          voltage_v DOUBLE,
+          pressure_bar DOUBLE,
+          flow_rate_lpm DOUBLE,
           state STRING,
           fault_code STRING,
           ts STRING
@@ -108,6 +114,12 @@ def build_source_dataframe(connection_string: str, starting_offsets: str):
             StructField("rpm", IntegerType(), True),
             StructField("current_amps", DoubleType(), True),
             StructField("humidity_pct", DoubleType(), True),
+            StructField("load_pct", DoubleType(), True),
+            StructField("power_kw", DoubleType(), True),
+            StructField("power_factor", DoubleType(), True),
+            StructField("voltage_v", DoubleType(), True),
+            StructField("pressure_bar", DoubleType(), True),
+            StructField("flow_rate_lpm", DoubleType(), True),
             StructField("state", StringType(), True),
             StructField("fault_code", StringType(), True),
             StructField("ts", StringType(), True),
@@ -143,6 +155,12 @@ def build_source_dataframe(connection_string: str, starting_offsets: str):
             F.col("parsed_json.rpm").cast("int").alias("rpm"),
             F.col("parsed_json.current_amps").cast("double").alias("current_amps"),
             F.col("parsed_json.humidity_pct").cast("double").alias("humidity_pct"),
+            F.col("parsed_json.load_pct").cast("double").alias("load_pct"),
+            F.col("parsed_json.power_kw").cast("double").alias("power_kw"),
+            F.col("parsed_json.power_factor").cast("double").alias("power_factor"),
+            F.col("parsed_json.voltage_v").cast("double").alias("voltage_v"),
+            F.col("parsed_json.pressure_bar").cast("double").alias("pressure_bar"),
+            F.col("parsed_json.flow_rate_lpm").cast("double").alias("flow_rate_lpm"),
             F.col("parsed_json.state").cast("string").alias("state"),
             F.col("parsed_json.fault_code").cast("string").alias("fault_code"),
             F.coalesce(
@@ -157,7 +175,9 @@ def build_source_dataframe(connection_string: str, starting_offsets: str):
 
 _RECORD_FIELDS = [
     "machine_id", "vibration_mm_s", "temp_c", "throughput_cpm",
-    "rpm", "current_amps", "humidity_pct", "state", "fault_code", "ts",
+    "rpm", "current_amps", "humidity_pct",
+    "load_pct", "power_kw", "power_factor", "voltage_v", "pressure_bar", "flow_rate_lpm",
+    "state", "fault_code", "ts",
 ]
 
 

@@ -79,13 +79,19 @@ Serial CSV format every ~1 second:
 1. In Arduino IDE, install libraries:
    - WiFiNINA
    - PubSubClient
-2. Update config constants in `arduino/machine_panel.ino`:
+2. Copy the credentials template and fill your values:
+
+```bash
+cp arduino/secrets.example.h arduino/secrets.h
+```
+
+3. Edit `arduino/secrets.h`:
    - `WIFI_SSID`, `WIFI_PASSWORD`
    - `IOT_HUB_HOST`
    - `DEVICE_ID` (default `arduino-panel`)
    - `SAS_TOKEN`
-3. Upload `arduino/machine_panel.ino` to the board.
-4. Open Serial Monitor at `115200` to verify:
+4. Upload `arduino/machine_panel.ino` to the board.
+5. Open Serial Monitor at `115200` to verify:
    - WiFi connection and IP
    - MQTT connect success
    - CSV and publish behavior

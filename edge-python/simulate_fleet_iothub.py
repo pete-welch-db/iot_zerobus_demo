@@ -22,6 +22,25 @@ logging.basicConfig(
 )
 LOGGER = logging.getLogger("fleet-simulator")
 
+TARGET_FIELDS = {
+    "machine_id",
+    "vibration_mm_s",
+    "temp_c",
+    "throughput_cpm",
+    "rpm",
+    "current_amps",
+    "humidity_pct",
+    "load_pct",
+    "power_kw",
+    "power_factor",
+    "voltage_v",
+    "pressure_bar",
+    "flow_rate_lpm",
+    "state",
+    "fault_code",
+    "ts",
+}
+
 
 @dataclass
 class DeviceConfig:
@@ -136,10 +155,12 @@ class DeviceRuntime:
             self.state = "FAULT"
             if self.current_amps >= 12.0:
                 self.fault_code = "OVERCURRENT"
+            elif self.vibration_mm_s >= self.vibration_fault_threshold and self.rpm > 2000:
+                self.fault_code = "BEARING_WEAR"
             elif self.temp_c >= self.temp_fault_threshold:
-                self.fault_code = "F_OVERHEAT"
+                self.fault_code = "OVERTEMP"
             else:
-                self.fault_code = "F_VIBRATION"
+                self.fault_code = "VIBRATION"
             self.temp_c = max(self.temp_fault_threshold + 0.2, self.temp_c + self.random.uniform(-0.6, 0.8))
             self.vibration_mm_s = max(
                 self.vibration_fault_threshold + 0.2, self.vibration_mm_s + self.random.uniform(-0.4, 0.6)
@@ -159,12 +180,14 @@ class DeviceRuntime:
         self.current_amps = max(0.5, self.current_amps - self.random.uniform(0.3, 0.8))
         self.humidity_pct = max(30.0, self.humidity_pct - self.random.uniform(0.3, 0.8))
 
-    def publish_once(self) -> None:
-        self._refresh_sas_if_needed()
-        now = time.time()
-        self._update_state(now)
-
-        payload = {
+    def _build_payload(self) -> Dict[str, Any]:
+        load_pct = max(0.0, min(100.0, (self.throughput_cpm / 120.0) * 100.0))
+        voltage_v = 230.0
+        power_factor = 0.92
+        power_kw = (voltage_v * self.current_amps * power_factor * math.sqrt(3)) / 1000.0
+        pressure_bar = max(1.0, 2.5 + load_pct / 45.0)
+        flow_rate_lpm = max(5.0, 40.0 + (self.throughput_cpm * 0.95))
+        return {
             "machine_id": self.config.machine_id,
             "vibration_mm_s": round(self.vibration_mm_s, 3),
             "temp_c": round(self.temp_c, 3),
@@ -172,10 +195,28 @@ class DeviceRuntime:
             "rpm": int(self.rpm),
             "current_amps": round(self.current_amps, 3),
             "humidity_pct": round(self.humidity_pct, 1),
+            "load_pct": round(load_pct, 2),
+            "power_kw": round(power_kw, 3),
+            "power_factor": round(power_factor, 3),
+            "voltage_v": round(voltage_v, 1),
+            "pressure_bar": round(pressure_bar, 3),
+            "flow_rate_lpm": round(flow_rate_lpm, 2),
             "state": self.state,
             "fault_code": self.fault_code,
             "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
+
+    def validate_target_fields(self) -> None:
+        payload = self._build_payload()
+        missing = sorted(TARGET_FIELDS.difference(payload.keys()))
+        if missing:
+            raise ValueError(f"{self.config.device_id} missing target payload fields: {missing}")
+
+    def publish_once(self) -> None:
+        self._refresh_sas_if_needed()
+        now = time.time()
+        self._update_state(now)
+        payload = self._build_payload()
         result = self.client.publish(self.topic, payload=json.dumps(payload), qos=1)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             LOGGER.error("Publish failed for %s rc=%s", self.config.device_id, result.rc)
@@ -196,6 +237,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vibration-fault-threshold", type=float, default=9.5)
     parser.add_argument("--token-ttl-seconds", type=int, default=3600)
     parser.add_argument("--log-every", type=int, default=100)
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Build one payload per device and validate target field coverage, then exit.",
+    )
     return parser.parse_args()
 
 
@@ -251,6 +297,16 @@ def main() -> None:
         )
         for device in devices
     ]
+
+    for runtime in runtimes:
+        runtime.validate_target_fields()
+    LOGGER.info("Payload field validation passed for %s devices.", len(runtimes))
+
+    if args.validate_only:
+        for runtime in runtimes:
+            runtime.close()
+        LOGGER.info("Validation-only mode complete.")
+        return
 
     stats: Dict[str, int] = {}
     lock = threading.Lock()

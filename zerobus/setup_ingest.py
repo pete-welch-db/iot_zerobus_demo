@@ -47,6 +47,24 @@ def get_secret(scope: str, key: str) -> str:
 def ensure_target_table(catalog: str, schema: str, table: str) -> str:
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
     full_name = f"{catalog}.{schema}.{table}"
+    expected_columns = {
+        "machine_id": "STRING",
+        "vibration_mm_s": "DOUBLE",
+        "temp_c": "DOUBLE",
+        "throughput_cpm": "INT",
+        "rpm": "INT",
+        "current_amps": "DOUBLE",
+        "humidity_pct": "DOUBLE",
+        "load_pct": "DOUBLE",
+        "power_kw": "DOUBLE",
+        "power_factor": "DOUBLE",
+        "voltage_v": "DOUBLE",
+        "pressure_bar": "DOUBLE",
+        "flow_rate_lpm": "DOUBLE",
+        "state": "STRING",
+        "fault_code": "STRING",
+        "ts": "STRING",
+    }
     spark.sql(
         f"""
         CREATE TABLE IF NOT EXISTS {full_name} (
@@ -54,12 +72,26 @@ def ensure_target_table(catalog: str, schema: str, table: str) -> str:
           vibration_mm_s DOUBLE,
           temp_c DOUBLE,
           throughput_cpm INT,
+          rpm INT,
+          current_amps DOUBLE,
+          humidity_pct DOUBLE,
+          load_pct DOUBLE,
+          power_kw DOUBLE,
+          power_factor DOUBLE,
+          voltage_v DOUBLE,
+          pressure_bar DOUBLE,
+          flow_rate_lpm DOUBLE,
           state STRING,
           fault_code STRING,
           ts STRING
         )
         """
     )
+    existing_columns = {r.col_name.lower() for r in spark.sql(f"DESCRIBE TABLE {full_name}").collect() if r.col_name}
+    missing = [f"{name} {dtype}" for name, dtype in expected_columns.items() if name.lower() not in existing_columns]
+    if missing:
+        spark.sql(f"ALTER TABLE {full_name} ADD COLUMNS ({', '.join(missing)})")
+        LOGGER.info("Added missing columns on %s: %s", full_name, ", ".join(missing))
     return full_name
 
 
@@ -109,6 +141,15 @@ def ensure_stream(
                 "vibration_mm_s": 1.0,
                 "temp_c": 42.0,
                 "throughput_cpm": 10,
+                "rpm": 1200,
+                "current_amps": 4.5,
+                "humidity_pct": 42.0,
+                "load_pct": 8.0,
+                "power_kw": 1.65,
+                "power_factor": 0.92,
+                "voltage_v": 230.0,
+                "pressure_bar": 2.7,
+                "flow_rate_lpm": 45.0,
                 "state": "RUN",
                 "fault_code": None,
                 "ts": None,

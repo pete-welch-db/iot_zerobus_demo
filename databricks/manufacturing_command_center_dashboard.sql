@@ -59,6 +59,7 @@ SELECT
   s.machine_id, d.line_name, s.last_event_time, s.state,
   s.vibration_mm_s, s.temp_c, s.throughput_cpm,
   s.rpm, s.current_amps, s.humidity_pct,
+  s.load_pct, s.power_kw, s.power_factor, s.voltage_v, s.pressure_bar, s.flow_rate_lpm,
   s.oee_pct, s.anomaly_score, s.prob_fault_next_5m,
   s.last_ml_score_time
 FROM vw_machine_current_status s
@@ -91,6 +92,7 @@ SELECT
   s.telemetry_lag_seconds, s.ml_lag_seconds,
   s.temp_c, s.vibration_mm_s, s.throughput_cpm,
   s.rpm, s.current_amps, s.humidity_pct,
+  s.load_pct, s.power_kw, s.power_factor, s.voltage_v, s.pressure_bar, s.flow_rate_lpm,
   s.anomaly_score, s.prob_fault_next_5m,
   CASE
     WHEN s.prob_fault_next_5m >= 0.7 THEN 'HIGH'

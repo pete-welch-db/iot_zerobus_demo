@@ -18,6 +18,12 @@ telemetry_schema = StructType(
         StructField("rpm", IntegerType(), True),
         StructField("current_amps", DoubleType(), True),
         StructField("humidity_pct", DoubleType(), True),
+        StructField("load_pct", DoubleType(), True),
+        StructField("power_kw", DoubleType(), True),
+        StructField("power_factor", DoubleType(), True),
+        StructField("voltage_v", DoubleType(), True),
+        StructField("pressure_bar", DoubleType(), True),
+        StructField("flow_rate_lpm", DoubleType(), True),
         StructField("state", StringType(), True),
         StructField("fault_code", StringType(), True),
         StructField("ts", StringType(), True),
@@ -43,17 +49,31 @@ def bronze_iot_raw():
             F.current_timestamp().alias("ingest_ts"),
         )
 
+    # Some environments can have a legacy raw table schema that is missing
+    # newly added telemetry fields. Fill absent columns with null so pipeline
+    # evolution remains backward-compatible.
+    def _col_or_null(name, cast_type):
+        if name in columns:
+            return F.col(name).cast(cast_type).alias(name)
+        return F.lit(None).cast(cast_type).alias(name)
+
     payload_struct = F.struct(
-        F.col("machine_id").cast("string").alias("machine_id"),
-        F.col("vibration_mm_s").cast("double").alias("vibration_mm_s"),
-        F.col("temp_c").cast("double").alias("temp_c"),
-        F.col("throughput_cpm").cast("int").alias("throughput_cpm"),
-        F.col("rpm").cast("int").alias("rpm"),
-        F.col("current_amps").cast("double").alias("current_amps"),
-        F.col("humidity_pct").cast("double").alias("humidity_pct"),
-        F.col("state").cast("string").alias("state"),
-        F.col("fault_code").cast("string").alias("fault_code"),
-        F.col("ts").cast("string").alias("ts"),
+        _col_or_null("machine_id", "string"),
+        _col_or_null("vibration_mm_s", "double"),
+        _col_or_null("temp_c", "double"),
+        _col_or_null("throughput_cpm", "int"),
+        _col_or_null("rpm", "int"),
+        _col_or_null("current_amps", "double"),
+        _col_or_null("humidity_pct", "double"),
+        _col_or_null("load_pct", "double"),
+        _col_or_null("power_kw", "double"),
+        _col_or_null("power_factor", "double"),
+        _col_or_null("voltage_v", "double"),
+        _col_or_null("pressure_bar", "double"),
+        _col_or_null("flow_rate_lpm", "double"),
+        _col_or_null("state", "string"),
+        _col_or_null("fault_code", "string"),
+        _col_or_null("ts", "string"),
     )
 
     return source_df.select(
@@ -76,6 +96,12 @@ def bronze_iot_raw():
 @dlt.expect("rpm_reasonable", "rpm BETWEEN 0 AND 10000")
 @dlt.expect("current_reasonable", "current_amps BETWEEN 0 AND 50")
 @dlt.expect("humidity_reasonable", "humidity_pct BETWEEN 0 AND 100")
+@dlt.expect("load_reasonable", "load_pct BETWEEN 0 AND 100")
+@dlt.expect("power_reasonable", "power_kw BETWEEN 0 AND 200")
+@dlt.expect("power_factor_reasonable", "power_factor BETWEEN 0 AND 1")
+@dlt.expect("voltage_reasonable", "voltage_v BETWEEN 100 AND 600")
+@dlt.expect("pressure_reasonable", "pressure_bar BETWEEN 0 AND 50")
+@dlt.expect("flow_reasonable", "flow_rate_lpm BETWEEN 0 AND 1000")
 def silver_machine_telemetry():
     parsed = dlt.read_stream("bronze_iot_raw").withColumn(
         "parsed_json",
@@ -95,6 +121,18 @@ def silver_machine_telemetry():
             F.coalesce(F.col("parsed_json.rpm").cast("int"), F.lit(0)).alias("rpm"),
             F.coalesce(F.col("parsed_json.current_amps").cast("double"), F.lit(0.0)).alias("current_amps"),
             F.coalesce(F.col("parsed_json.humidity_pct").cast("double"), F.lit(40.0)).alias("humidity_pct"),
+            F.coalesce(
+                F.col("parsed_json.load_pct").cast("double"),
+                F.greatest(F.lit(0.0), F.least(F.lit(100.0), F.col("parsed_json.throughput_cpm") / F.lit(1.2))),
+            ).alias("load_pct"),
+            F.coalesce(
+                F.col("parsed_json.power_kw").cast("double"),
+                (F.col("parsed_json.current_amps").cast("double") * F.lit(0.365)).cast("double"),
+            ).alias("power_kw"),
+            F.coalesce(F.col("parsed_json.power_factor").cast("double"), F.lit(0.92)).alias("power_factor"),
+            F.coalesce(F.col("parsed_json.voltage_v").cast("double"), F.lit(230.0)).alias("voltage_v"),
+            F.coalesce(F.col("parsed_json.pressure_bar").cast("double"), F.lit(2.5)).alias("pressure_bar"),
+            F.coalesce(F.col("parsed_json.flow_rate_lpm").cast("double"), F.lit(40.0)).alias("flow_rate_lpm"),
             F.col("parsed_json.state").cast("string").alias("state"),
             F.col("parsed_json.fault_code").cast("string").alias("fault_code"),
             F.coalesce(

@@ -4,7 +4,7 @@
       "name": "ds_live_telemetry",
       "displayName": "Live Telemetry",
       "queryLines": [
-        "SELECT event_time, machine_id, state, temp_c, vibration_mm_s, throughput_cpm, rpm, current_amps, humidity_pct FROM welch.iot_demo_dev.vw_machine_telemetry_live"
+        "SELECT event_time, machine_id, state, temp_c, vibration_mm_s, throughput_cpm, rpm, current_amps, humidity_pct, load_pct, power_kw, power_factor, voltage_v, pressure_bar, flow_rate_lpm FROM welch.iot_demo_dev.vw_machine_telemetry_live"
       ]
     },
     {
@@ -18,14 +18,14 @@
       "name": "ds_current_status",
       "displayName": "Current Status",
       "queryLines": [
-        "SELECT machine_id, state, last_event_time, oee_pct, anomaly_score, prob_fault_next_5m, throughput_cpm, temp_c, vibration_mm_s, rpm, current_amps, humidity_pct, telemetry_lag_seconds, ml_lag_seconds FROM welch.iot_demo_dev.vw_machine_current_status"
+        "SELECT machine_id, state, last_event_time, oee_pct, anomaly_score, prob_fault_next_5m, throughput_cpm, temp_c, vibration_mm_s, rpm, current_amps, humidity_pct, load_pct, power_kw, power_factor, voltage_v, pressure_bar, flow_rate_lpm, telemetry_lag_seconds, ml_lag_seconds FROM welch.iot_demo_dev.vw_machine_current_status"
       ]
     },
     {
       "name": "ds_device_health_latency",
       "displayName": "Device Health + Latency",
       "queryLines": [
-        "SELECT s.machine_id, d.line_name, s.state, s.last_event_time, s.telemetry_lag_seconds, s.ml_lag_seconds, s.temp_c, s.vibration_mm_s, s.throughput_cpm, s.rpm, s.current_amps, s.humidity_pct, s.anomaly_score, s.prob_fault_next_5m, CASE WHEN s.prob_fault_next_5m >= 0.7 THEN 'HIGH' WHEN s.prob_fault_next_5m >= 0.4 THEN 'MEDIUM' ELSE 'LOW' END AS fault_band FROM welch.iot_demo_dev.vw_machine_current_status s LEFT JOIN welch.iot_demo_dev.dim_machine d ON s.machine_id = d.machine_id"
+        "SELECT s.machine_id, d.line_name, s.state, s.last_event_time, s.telemetry_lag_seconds, s.ml_lag_seconds, s.temp_c, s.vibration_mm_s, s.throughput_cpm, s.rpm, s.current_amps, s.humidity_pct, s.load_pct, s.power_kw, s.power_factor, s.voltage_v, s.pressure_bar, s.flow_rate_lpm, s.anomaly_score, s.prob_fault_next_5m, CASE WHEN s.prob_fault_next_5m >= 0.7 THEN 'HIGH' WHEN s.prob_fault_next_5m >= 0.4 THEN 'MEDIUM' ELSE 'LOW' END AS fault_band FROM welch.iot_demo_dev.vw_machine_current_status s LEFT JOIN welch.iot_demo_dev.dim_machine d ON s.machine_id = d.machine_id"
       ]
     },
     {
@@ -340,7 +340,7 @@
         },
         {
           "widget": {
-            "name": "kpi_telemetry_lag",
+            "name": "kpi_telemetry_lag_detail",
             "queries": [
               {
                 "name": "main_query",
@@ -380,7 +380,7 @@
         },
         {
           "widget": {
-            "name": "kpi_ml_lag",
+            "name": "kpi_ml_lag_detail",
             "queries": [
               {
                 "name": "main_query",
@@ -721,6 +721,42 @@
                       "expression": "`throughput_cpm`"
                     },
                     {
+                      "name": "rpm",
+                      "expression": "`rpm`"
+                    },
+                    {
+                      "name": "current_amps",
+                      "expression": "`current_amps`"
+                    },
+                    {
+                      "name": "humidity_pct",
+                      "expression": "`humidity_pct`"
+                    },
+                    {
+                      "name": "load_pct",
+                      "expression": "`load_pct`"
+                    },
+                    {
+                      "name": "power_kw",
+                      "expression": "`power_kw`"
+                    },
+                    {
+                      "name": "power_factor",
+                      "expression": "`power_factor`"
+                    },
+                    {
+                      "name": "voltage_v",
+                      "expression": "`voltage_v`"
+                    },
+                    {
+                      "name": "pressure_bar",
+                      "expression": "`pressure_bar`"
+                    },
+                    {
+                      "name": "flow_rate_lpm",
+                      "expression": "`flow_rate_lpm`"
+                    },
+                    {
                       "name": "last_event_time",
                       "expression": "`last_event_time`"
                     }
@@ -779,12 +815,36 @@
                     "displayName": "Throughput"
                   },
                   {
+                    "fieldName": "load_pct",
+                    "displayName": "Load %"
+                  },
+                  {
                     "fieldName": "rpm",
                     "displayName": "RPM"
                   },
                   {
                     "fieldName": "current_amps",
                     "displayName": "Current (A)"
+                  },
+                  {
+                    "fieldName": "power_kw",
+                    "displayName": "Power (kW)"
+                  },
+                  {
+                    "fieldName": "power_factor",
+                    "displayName": "Power Factor"
+                  },
+                  {
+                    "fieldName": "voltage_v",
+                    "displayName": "Voltage (V)"
+                  },
+                  {
+                    "fieldName": "pressure_bar",
+                    "displayName": "Pressure (bar)"
+                  },
+                  {
+                    "fieldName": "flow_rate_lpm",
+                    "displayName": "Flow (LPM)"
                   },
                   {
                     "fieldName": "last_event_time",
@@ -794,7 +854,7 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Device Health + Latency"
+                "title": "Machine Drill-Down Details"
               }
             }
           },

@@ -8,6 +8,26 @@ from pathlib import Path
 from typing import Dict, Iterable, List
 
 
+TARGET_FIELDS = [
+    "machine_id",
+    "event_time",
+    "vibration_mm_s",
+    "temp_c",
+    "throughput_cpm",
+    "rpm",
+    "current_amps",
+    "humidity_pct",
+    "load_pct",
+    "power_kw",
+    "power_factor",
+    "voltage_v",
+    "pressure_bar",
+    "flow_rate_lpm",
+    "state",
+    "fault_code",
+]
+
+
 @dataclass
 class GeneratorConfig:
     num_devices: int
@@ -81,10 +101,12 @@ def generate_rows_for_device(
             state = "FAULT"
             if current_amps >= 12.0:
                 fault_code = "OVERCURRENT"
+            elif vibration >= cfg.vibration_fault_threshold and rpm > 2000:
+                fault_code = "BEARING_WEAR"
             elif temp >= cfg.temp_fault_threshold:
-                fault_code = "F_OVERHEAT"
+                fault_code = "OVERTEMP"
             else:
-                fault_code = "F_VIBRATION"
+                fault_code = "VIBRATION"
             temp = max(cfg.temp_fault_threshold + 0.1, temp + rnd.uniform(-0.4, 0.8))
             vibration = max(cfg.vibration_fault_threshold + 0.1, vibration + rnd.uniform(-0.3, 0.6))
             throughput = rnd.randint(0, 10)
@@ -107,6 +129,12 @@ def generate_rows_for_device(
             or vibration >= cfg.vibration_fault_threshold
             or current_amps >= 12.0
         )
+        load_pct = max(0.0, min(100.0, (throughput / 120.0) * 100.0))
+        voltage_v = 230.0
+        power_factor = 0.92
+        power_kw = (voltage_v * current_amps * power_factor * 1.732) / 1000.0
+        pressure_bar = max(1.0, 2.5 + load_pct / 45.0)
+        flow_rate_lpm = max(5.0, 40.0 + (throughput * 0.95))
         row = {
             "machine_id": machine_id,
             "event_time": ts.isoformat().replace("+00:00", "Z"),
@@ -116,6 +144,12 @@ def generate_rows_for_device(
             "rpm": int(rpm),
             "current_amps": round(current_amps, 4),
             "humidity_pct": round(humidity_pct, 1),
+            "load_pct": round(load_pct, 2),
+            "power_kw": round(power_kw, 3),
+            "power_factor": round(power_factor, 3),
+            "voltage_v": round(voltage_v, 1),
+            "pressure_bar": round(pressure_bar, 3),
+            "flow_rate_lpm": round(flow_rate_lpm, 2),
             "state": state,
             "fault_code": fault_code,
             "is_fault": is_fault,
@@ -153,6 +187,11 @@ def main() -> None:
     all_rows: List[Dict] = []
     for machine_id in devices:
         all_rows.extend(generate_rows_for_device(machine_id, start_ts, cfg, rnd))
+
+    if all_rows:
+        missing = [field for field in TARGET_FIELDS if field not in all_rows[0]]
+        if missing:
+            raise ValueError(f"Generated row is missing target fields: {missing}")
 
     jsonl_path = Path(args.output_jsonl)
     csv_path = Path(args.output_csv)
