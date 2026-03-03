@@ -73,6 +73,7 @@ Use the generated token in either:
 
 - `edge-python/sender.py` as `SAS_TOKEN` environment variable.
 - `arduino/machine_panel.ino` as the `SAS_TOKEN` constant for direct device publish.
+- Keep generated SAS tokens and device keys out of source control.
 
 ## 6) Uno WiFi Rev2 Direct-MQTT Settings
 
@@ -118,3 +119,4 @@ TLS_INSECURE=true   # demo-only if local cert chain issues occur
 - Keep hotspot credentials, SAS tokens, and keys out of source control.
 - Prefer Azure Key Vault or secret manager for shared/demo environments.
 - Keep Databricks and IoT Hub regions close to minimize end-to-end latency.
+- For simulator manifests, use local-only files (for example `devices.local.json`) and never commit keys.

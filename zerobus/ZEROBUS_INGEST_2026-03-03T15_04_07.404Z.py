@@ -50,13 +50,25 @@ def ensure_target_table(catalog: str, schema: str, table: str) -> str:
     spark.sql(
         f"""
         CREATE TABLE IF NOT EXISTS {full_name} (
+          schema_version STRING,
           machine_id STRING,
           vibration_mm_s DOUBLE,
           temp_c DOUBLE,
           throughput_cpm INT,
           state STRING,
           fault_code STRING,
-          ts STRING
+          ts STRING,
+          rpm INT,
+          load_pct DOUBLE,
+          humidity_rh DOUBLE,
+          current_a DOUBLE,
+          power_kw DOUBLE,
+          power_factor DOUBLE,
+          voltage_v DOUBLE,
+          pressure_bar DOUBLE,
+          flow_rate_lpm DOUBLE,
+          cycle_count BIGINT,
+          runtime_hours DOUBLE
         )
         """
     )

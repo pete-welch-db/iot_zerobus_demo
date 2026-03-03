@@ -60,6 +60,9 @@ variables:
   iothub_bridge_starting_offsets:
     description: Kafka/Event Hubs starting offsets mode for IoT Hub bridge (latest for live demo, earliest for backfill)
     default: latest
+  iothub_bridge_trigger_interval:
+    description: Structured Streaming trigger interval for continuous IoT Hub bridge
+    default: 10 seconds
   zerobus_run_smoke_ingest:
     description: Whether zerobus setup job writes a single test record
     default: "false"

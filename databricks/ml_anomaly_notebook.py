@@ -36,13 +36,23 @@ mlflow.set_experiment(experiment_name)
 
 feature_cols = ["vibration_mm_s", "temp_c", "throughput_cpm"]
 artifact_path = "anomaly_pipeline_model"
+optional_feature_defaults = {
+    "load_pct": 0.0,
+    "rpm": 0.0,
+    "humidity_rh": 50.0,
+}
 
 
 def _training_pdf() -> pd.DataFrame:
+    existing_cols = set(spark.table(silver_table).columns)
+    select_cols = ["machine_id", "event_time", "vibration_mm_s", "temp_c", "throughput_cpm", "state"]
+    for col_name in optional_feature_defaults:
+        if col_name in existing_cols:
+            select_cols.append(col_name)
     source_df = (
         spark.table(silver_table)
         .where("event_time >= current_timestamp() - INTERVAL 2 DAYS")
-        .select("machine_id", "event_time", "vibration_mm_s", "temp_c", "throughput_cpm", "state")
+        .select(*select_cols)
         .dropna()
     )
     return source_df.toPandas()
@@ -52,6 +62,9 @@ def _score_pdf(in_pdf: pd.DataFrame, model: Pipeline) -> pd.DataFrame:
     if in_pdf.empty:
         return in_pdf
     score_pdf = in_pdf.copy()
+    for col_name, default_value in optional_feature_defaults.items():
+        if col_name not in score_pdf.columns:
+            score_pdf[col_name] = default_value
     X = score_pdf[feature_cols].astype(float).values
     decision = model.decision_function(X)
     model_score = 1.0 / (1.0 + np.exp(4.0 * decision))
@@ -80,6 +93,48 @@ def _latest_training_run_model_uri() -> str:
         raise ValueError("No prior anomaly training run found. Run once with --train-model true.")
     run_id = runs.iloc[0]["run_id"]
     return f"runs:/{run_id}/{artifact_path}"
+
+
+def _ensure_output_tables() -> None:
+    spark.sql(
+        f"""
+        CREATE TABLE IF NOT EXISTS {history_table} (
+          machine_id STRING,
+          event_time TIMESTAMP,
+          anomaly_score DOUBLE,
+          is_anomaly BOOLEAN,
+          inference_type STRING,
+          model_run_id STRING,
+          scored_at TIMESTAMP
+        )
+        """
+    )
+    spark.sql(
+        f"""
+        CREATE TABLE IF NOT EXISTS {output_table} (
+          machine_id STRING,
+          event_time TIMESTAMP,
+          anomaly_score DOUBLE,
+          is_anomaly BOOLEAN,
+          inference_type STRING,
+          model_run_id STRING,
+          scored_at TIMESTAMP
+        )
+        """
+    )
+
+
+def _merge_latest_scores(result_df) -> None:
+    result_df.createOrReplaceTempView("tmp_ml_anomaly_scores_latest")
+    spark.sql(
+        f"""
+        MERGE INTO {output_table} AS tgt
+        USING tmp_ml_anomaly_scores_latest AS src
+          ON tgt.machine_id = src.machine_id
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+        """
+    )
 
 
 with mlflow.start_run(run_name=f"iot_anomaly_pipeline_{inference_mode}"):
@@ -141,21 +196,32 @@ with mlflow.start_run(run_name=f"iot_anomaly_pipeline_{inference_mode}"):
         model_run_id = model_uri.split("/")[1]
 
     scored_segments = []
+    _ensure_output_tables()
     requested_modes = ["batch", "realtime"] if inference_mode == "both" else [inference_mode]
 
     for mode in requested_modes:
         if mode == "batch":
+            existing_cols = set(spark.table(silver_table).columns)
+            select_cols = ["machine_id", "event_time", "vibration_mm_s", "temp_c", "throughput_cpm", "state"]
+            for col_name in optional_feature_defaults:
+                if col_name in existing_cols:
+                    select_cols.append(col_name)
             score_df = (
                 spark.table(silver_table)
                 .where(f"event_time >= current_timestamp() - INTERVAL {batch_lookback_hours} HOURS")
-                .select("machine_id", "event_time", "vibration_mm_s", "temp_c", "throughput_cpm", "state")
+                .select(*select_cols)
                 .dropna()
             )
         else:
+            existing_cols = set(spark.table(silver_table).columns)
+            select_cols = ["machine_id", "event_time", "vibration_mm_s", "temp_c", "throughput_cpm", "state"]
+            for col_name in optional_feature_defaults:
+                if col_name in existing_cols:
+                    select_cols.append(col_name)
             score_df = (
                 spark.table(silver_table)
                 .where(f"event_time >= current_timestamp() - INTERVAL {realtime_lookback_minutes} MINUTES")
-                .select("machine_id", "event_time", "vibration_mm_s", "temp_c", "throughput_cpm", "state")
+                .select(*select_cols)
                 .dropna()
             )
 
@@ -223,12 +289,7 @@ with mlflow.start_run(run_name=f"iot_anomaly_pipeline_{inference_mode}"):
                 ]
             ]
         )
-        (
-            result_df.write.mode("overwrite")
-            .option("overwriteSchema", "true")
-            .format("delta")
-            .saveAsTable(output_table)
-        )
+        _merge_latest_scores(result_df)
 
         mlflow.log_metrics(
             {

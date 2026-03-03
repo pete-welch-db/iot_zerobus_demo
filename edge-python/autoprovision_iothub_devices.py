@@ -135,8 +135,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-file",
-        default="devices.json",
-        help="Output manifest path for simulator (default: devices.json)",
+        default="devices.local.json",
+        help="Output manifest path for simulator (default: devices.local.json)",
+    )
+    parser.add_argument(
+        "--include-device-keys",
+        action="store_true",
+        help="Include per-device symmetric keys in manifest (required for simulator publish).",
     )
     return parser.parse_args()
 
@@ -153,7 +158,7 @@ def main() -> None:
         machine_id = f"{args.machine_prefix}_{suffix}"
 
         ensure_device_identity(args.iothub_name, device_id)
-        device_key = get_device_key(args.iothub_name, device_id)
+        device_key = get_device_key(args.iothub_name, device_id) if args.include_device_keys else None
 
         manifest.append(
             {
@@ -168,7 +173,10 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"\nWrote {len(manifest)} devices to: {output_path}")
-    print("Use this file with simulate_fleet_iothub.py --devices-file")
+    if args.include_device_keys:
+        print("Use this file with simulate_fleet_iothub.py --devices-file")
+    else:
+        print("Manifest written without keys. Re-run with --include-device-keys for simulator publishing.")
 
 
 if __name__ == "__main__":

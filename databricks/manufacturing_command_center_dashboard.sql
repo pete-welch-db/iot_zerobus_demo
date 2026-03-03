@@ -81,10 +81,10 @@ ORDER BY s.last_event_time DESC;
 
 -- 8) Fleet KPI cards
 SELECT
-  avg(oee_pct) AS fleet_oee_pct,
-  avg(availability_pct) AS fleet_availability_pct,
-  avg(performance_pct) AS fleet_performance_pct,
-  avg(quality_pct) AS fleet_quality_pct,
+  AVG(oee_pct) AS fleet_oee_pct,
+  AVG(availability_pct) AS fleet_availability_pct,
+  AVG(performance_pct) AS fleet_performance_pct,
+  AVG(quality_pct) AS fleet_quality_pct,
   sum(CASE WHEN anomaly_score >= 0.7 THEN 1 ELSE 0 END) AS active_anomaly_machines,
   sum(CASE WHEN prob_fault_next_5m >= 0.5 THEN 1 ELSE 0 END) AS high_risk_machines,
   avg(telemetry_lag_seconds) AS avg_telemetry_lag_seconds,
@@ -114,6 +114,11 @@ SELECT
   s.temp_c,
   s.vibration_mm_s,
   s.throughput_cpm,
+  s.rpm,
+  s.load_pct,
+  s.power_kw,
+  s.current_a,
+  s.pressure_bar,
   s.anomaly_score,
   s.prob_fault_next_5m,
   CASE
@@ -125,3 +130,32 @@ FROM vw_machine_current_status s
 LEFT JOIN dim_machine d
   ON s.machine_id = d.machine_id
 ORDER BY s.telemetry_lag_seconds ASC, s.ml_lag_seconds ASC, s.last_event_time DESC;
+
+-- 11) Fleet SLO benchmark status (backed by semantic view + UC metric view)
+SELECT
+  machine_count,
+  pct_within_telemetry_slo,
+  pct_within_ml_slo,
+  max_telemetry_lag_seconds,
+  max_ml_lag_seconds
+FROM vw_machine_slo_status;
+
+-- 12) Critical machines breaching SLOs
+SELECT
+  machine_id,
+  state,
+  telemetry_lag_seconds,
+  ml_lag_seconds,
+  prob_fault_next_5m,
+  anomaly_score
+FROM vw_machine_current_status
+WHERE telemetry_lag_seconds > 60 OR ml_lag_seconds > 90
+ORDER BY ml_lag_seconds DESC, telemetry_lag_seconds DESC, prob_fault_next_5m DESC;
+
+-- 13) Metric-view query examples for validated KPI definitions
+SELECT
+  MAX(`Pct Within Telemetry SLO`) AS mv_pct_within_telemetry_slo,
+  MAX(`Pct Within ML SLO`) AS mv_pct_within_ml_slo,
+  MAX(`Max Telemetry Lag Seconds`) AS mv_max_telemetry_lag_seconds,
+  MAX(`Max ML Lag Seconds`) AS mv_max_ml_lag_seconds
+FROM mv_machine_slo;

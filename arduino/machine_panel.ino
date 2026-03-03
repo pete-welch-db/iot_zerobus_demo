@@ -1,6 +1,20 @@
-// Arduino Uno WiFi Rev2 machine panel simulator.
-// Direct mode: publishes telemetry JSON to Azure IoT Hub over MQTT/TLS.
-// Fallback mode: still emits CSV over serial for local Python bridge.
+// Arduino Uno WiFi Rev2 machine panel simulator for manufacturing demo.
+// Primary mode: publishes telemetry JSON directly to Azure IoT Hub over MQTT/TLS.
+// Fallback mode: emits CSV over serial for local Python bridge.
+//
+// Wiring guide:
+// - POT_VIB  (A0): potentiometer signal pin -> A0, outer pins -> 5V and GND.
+// - POT_TEMP (A1): potentiometer signal pin -> A1, outer pins -> 5V and GND.
+// - POT_TPUT (A2): potentiometer signal pin -> A2, outer pins -> 5V and GND.
+// - BTN_RUN  (D2): momentary button from D2 to GND (uses INPUT_PULLUP).
+// - BTN_FAULT(D3): momentary button from D3 to GND (uses INPUT_PULLUP).
+// - LED_RUN  (D10): LED + 220 ohm resistor to GND.
+// - LED_FAULT(D11): LED + 220 ohm resistor to GND.
+//
+// Demo actions:
+// - Press RUN button to toggle RUN <-> STOPPED.
+// - Press FAULT button to force/clear FAULT.
+// - Raise temperature/vibration pots above threshold to auto-emit FAULT risk.
 
 #include <SPI.h>
 #include <WiFiNINA.h>
@@ -24,15 +38,15 @@ const float TEMP_FAULT_THRESHOLD_C = 85.0;
 const float VIBRATION_FAULT_THRESHOLD_MM_S = 9.5;
 
 // ---------- WiFi / IoT Hub Direct Publish Config ----------
-// Keep secrets out of source control in real usage.
-const char WIFI_SSID[] = "Dad Phone";
-const char WIFI_PASSWORD[] = "EatonRapids";
+// Best practice: replace these placeholders locally or inject from a private header.
+const char WIFI_SSID[] = "YOUR_WIFI_SSID";
+const char WIFI_PASSWORD[] = "YOUR_WIFI_PASSWORD";
 
 const char IOT_HUB_HOST[] = "iothub-zerobus-demo-welch.azure-devices.net";
 const int IOT_HUB_PORT = 8883;
 const char DEVICE_ID[] = "arduino-panel";
 const char MACHINE_ID[] = "MACH_A";
-const char SAS_TOKEN[] = "SharedAccessSignature sr=iothub-zerobus-demo-welch.azure-devices.net%2Fdevices%2Farduino-panel&sig=aXegHbADY0E4xogqpPXaE6%2FJttDrJVsFebNrBHMIM8E%3D&se=1772575942";
+const char SAS_TOKEN[] = "SharedAccessSignature sr=<resource>&sig=<signature>&se=<expiry>";
 
 // Topic and username follow Azure IoT Hub device MQTT convention.
 char mqttTopic[96];
@@ -47,6 +61,8 @@ MachineState previousNonFaultState = RUN;
 unsigned long lastEmitMs = 0;
 unsigned long lastRunEdgeMs = 0;
 unsigned long lastFaultEdgeMs = 0;
+unsigned long cycleCount = 0;
+float runtimeHours = 0.0;
 
 int lastRunButtonReading = HIGH;
 int lastFaultButtonReading = HIGH;
@@ -260,30 +276,88 @@ void publishMqttJson(const TelemetrySample& s) {
   char* temp = tempBuf;
   while (*temp == ' ') temp++;
 
-  // We intentionally set ts to null on-device; Databricks falls back to IoT Hub enqueue time.
-  char payload[320];
+  cycleCount++;
+  runtimeHours += (float)SAMPLE_INTERVAL_MS / 3600000.0;
+  float loadPct = constrain(((float)s.throughput / 120.0) * 100.0, 0.0, 100.0);
+  int rpm = 800 + (s.throughput * 18);
+  float humidityRh = constrain(45.0 + ((s.tempC - 60.0) * 0.4), 20.0, 80.0);
+  float voltageV = 230.0;
+  float currentA = 4.0 + (loadPct * 0.16);
+  float powerFactor = 0.92;
+  float powerKw = (voltageV * currentA * powerFactor * 1.732) / 1000.0;
+  float pressureBar = max(1.0, 2.5 + loadPct / 45.0);
+  float flowRateLpm = max(5.0, 40.0 + ((float)s.throughput * 0.95));
+
+  char loadBuf[16];
+  char humidityBuf[16];
+  char currentBuf[16];
+  char powerKwBuf[16];
+  char powerFactorBuf[16];
+  char pressureBuf[16];
+  char flowBuf[16];
+  char runtimeBuf[16];
+  dtostrf(loadPct, 1, 2, loadBuf);
+  dtostrf(humidityRh, 1, 2, humidityBuf);
+  dtostrf(currentA, 1, 2, currentBuf);
+  dtostrf(powerKw, 1, 3, powerKwBuf);
+  dtostrf(powerFactor, 1, 3, powerFactorBuf);
+  dtostrf(pressureBar, 1, 3, pressureBuf);
+  dtostrf(flowRateLpm, 1, 2, flowBuf);
+  dtostrf(runtimeHours, 1, 4, runtimeBuf);
+
+  char* load = loadBuf; while (*load == ' ') load++;
+  char* humidity = humidityBuf; while (*humidity == ' ') humidity++;
+  char* current = currentBuf; while (*current == ' ') current++;
+  char* powerKwStr = powerKwBuf; while (*powerKwStr == ' ') powerKwStr++;
+  char* powerFactorStr = powerFactorBuf; while (*powerFactorStr == ' ') powerFactorStr++;
+  char* pressure = pressureBuf; while (*pressure == ' ') pressure++;
+  char* flow = flowBuf; while (*flow == ' ') flow++;
+  char* runtime = runtimeBuf; while (*runtime == ' ') runtime++;
+
+  // ts remains null on-device; Databricks falls back to IoT Hub enqueue time.
+  char payload[700];
   if (strcmp(s.faultCode, "NONE") == 0) {
     snprintf(
       payload,
       sizeof(payload),
-      "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,\"state\":\"%s\",\"fault_code\":null,\"ts\":null}",
-      MACHINE_ID,
-      vib,
-      temp,
-      s.throughput,
-      s.state
-    );
-  } else {
-    snprintf(
-      payload,
-      sizeof(payload),
-      "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,\"state\":\"%s\",\"fault_code\":\"%s\",\"ts\":null}",
+      "{\"schema_version\":\"2.0\",\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,\"state\":\"%s\",\"fault_code\":null,\"rpm\":%d,\"load_pct\":%s,\"humidity_rh\":%s,\"current_a\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":230.0,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,\"cycle_count\":%lu,\"runtime_hours\":%s,\"ts\":null}",
       MACHINE_ID,
       vib,
       temp,
       s.throughput,
       s.state,
-      s.faultCode
+      rpm,
+      load,
+      humidity,
+      current,
+      powerKwStr,
+      powerFactorStr,
+      pressure,
+      flow,
+      cycleCount,
+      runtime
+    );
+  } else {
+    snprintf(
+      payload,
+      sizeof(payload),
+      "{\"schema_version\":\"2.0\",\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,\"state\":\"%s\",\"fault_code\":\"%s\",\"rpm\":%d,\"load_pct\":%s,\"humidity_rh\":%s,\"current_a\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":230.0,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,\"cycle_count\":%lu,\"runtime_hours\":%s,\"ts\":null}",
+      MACHINE_ID,
+      vib,
+      temp,
+      s.throughput,
+      s.state,
+      s.faultCode,
+      rpm,
+      load,
+      humidity,
+      current,
+      powerKwStr,
+      powerFactorStr,
+      pressure,
+      flow,
+      cycleCount,
+      runtime
     );
   }
 

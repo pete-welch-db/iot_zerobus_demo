@@ -32,14 +32,14 @@
       "name": "ds_current_status",
       "displayName": "Current Status",
       "queryLines": [
-        "SELECT machine_id, state, last_event_time, oee_pct, anomaly_score, prob_fault_next_5m, throughput_cpm, temp_c, vibration_mm_s, telemetry_lag_seconds, ml_lag_seconds FROM welch.iot_demo_dev.vw_machine_current_status"
+        "SELECT machine_id, state, last_event_time, oee_pct, anomaly_score, prob_fault_next_5m, throughput_cpm, temp_c, vibration_mm_s, rpm, load_pct, power_kw, current_a, telemetry_lag_seconds, ml_lag_seconds FROM welch.iot_demo_dev.vw_machine_current_status"
       ]
     },
     {
       "name": "ds_device_health_latency",
       "displayName": "Device Health + Latency",
       "queryLines": [
-        "SELECT s.machine_id, d.line_name, s.state, s.last_event_time, s.telemetry_lag_seconds, s.ml_lag_seconds, s.temp_c, s.vibration_mm_s, s.throughput_cpm, s.anomaly_score, s.prob_fault_next_5m, CASE WHEN s.prob_fault_next_5m >= 0.7 THEN 'HIGH' WHEN s.prob_fault_next_5m >= 0.4 THEN 'MEDIUM' ELSE 'LOW' END AS fault_band FROM welch.iot_demo_dev.vw_machine_current_status s LEFT JOIN welch.iot_demo_dev.dim_machine d ON s.machine_id = d.machine_id"
+        "SELECT s.machine_id, d.line_name, s.state, s.last_event_time, s.telemetry_lag_seconds, s.ml_lag_seconds, s.temp_c, s.vibration_mm_s, s.throughput_cpm, s.rpm, s.load_pct, s.power_kw, s.current_a, s.pressure_bar, s.anomaly_score, s.prob_fault_next_5m, CASE WHEN s.prob_fault_next_5m >= 0.7 THEN 'HIGH' WHEN s.prob_fault_next_5m >= 0.4 THEN 'MEDIUM' ELSE 'LOW' END AS fault_band FROM welch.iot_demo_dev.vw_machine_current_status s LEFT JOIN welch.iot_demo_dev.dim_machine d ON s.machine_id = d.machine_id"
       ]
     },
     {
@@ -47,6 +47,13 @@
       "displayName": "Downtime by Window",
       "queryLines": [
         "SELECT machine_id, window_end, (time_in_stopped_s + time_in_fault_s) AS downtime_s FROM welch.iot_demo_dev.vw_machine_health"
+      ]
+    },
+    {
+      "name": "ds_slo_summary",
+      "displayName": "SLO Summary",
+      "queryLines": [
+        "SELECT machine_count, pct_within_telemetry_slo, pct_within_ml_slo, max_telemetry_lag_seconds, max_ml_lag_seconds FROM welch.iot_demo_dev.vw_machine_slo_status"
       ]
     }
   ],
@@ -735,6 +742,26 @@
                       "expression": "`throughput_cpm`"
                     },
                     {
+                      "name": "rpm",
+                      "expression": "`rpm`"
+                    },
+                    {
+                      "name": "load_pct",
+                      "expression": "`load_pct`"
+                    },
+                    {
+                      "name": "power_kw",
+                      "expression": "`power_kw`"
+                    },
+                    {
+                      "name": "current_a",
+                      "expression": "`current_a`"
+                    },
+                    {
+                      "name": "pressure_bar",
+                      "expression": "`pressure_bar`"
+                    },
+                    {
                       "name": "last_event_time",
                       "expression": "`last_event_time`"
                     }
@@ -793,6 +820,26 @@
                     "displayName": "Throughput"
                   },
                   {
+                    "fieldName": "rpm",
+                    "displayName": "RPM"
+                  },
+                  {
+                    "fieldName": "load_pct",
+                    "displayName": "Load %"
+                  },
+                  {
+                    "fieldName": "power_kw",
+                    "displayName": "Power (kW)"
+                  },
+                  {
+                    "fieldName": "current_a",
+                    "displayName": "Current (A)"
+                  },
+                  {
+                    "fieldName": "pressure_bar",
+                    "displayName": "Pressure (bar)"
+                  },
+                  {
                     "fieldName": "last_event_time",
                     "displayName": "Last Event"
                   }
@@ -809,6 +856,80 @@
             "y": 12,
             "width": 12,
             "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "slo_benchmark_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_slo_summary",
+                  "fields": [
+                    {
+                      "name": "machine_count",
+                      "expression": "`machine_count`"
+                    },
+                    {
+                      "name": "pct_within_telemetry_slo",
+                      "expression": "`pct_within_telemetry_slo`"
+                    },
+                    {
+                      "name": "pct_within_ml_slo",
+                      "expression": "`pct_within_ml_slo`"
+                    },
+                    {
+                      "name": "max_telemetry_lag_seconds",
+                      "expression": "`max_telemetry_lag_seconds`"
+                    },
+                    {
+                      "name": "max_ml_lag_seconds",
+                      "expression": "`max_ml_lag_seconds`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "machine_count",
+                    "displayName": "Machine Count"
+                  },
+                  {
+                    "fieldName": "pct_within_telemetry_slo",
+                    "displayName": "% Within Telemetry SLO"
+                  },
+                  {
+                    "fieldName": "pct_within_ml_slo",
+                    "displayName": "% Within ML SLO"
+                  },
+                  {
+                    "fieldName": "max_telemetry_lag_seconds",
+                    "displayName": "Max Telemetry Lag (s)"
+                  },
+                  {
+                    "fieldName": "max_ml_lag_seconds",
+                    "displayName": "Max ML Lag (s)"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "SLO Benchmark Summary"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 12,
+            "height": 3
           }
         }
       ]

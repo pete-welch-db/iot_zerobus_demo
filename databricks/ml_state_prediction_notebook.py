@@ -40,6 +40,11 @@ artifact_path = "fault_prediction_pipeline_model"
 feature_cols_num = ["vibration_mm_s", "temp_c", "throughput_cpm"]
 feature_cols_cat = ["state"]
 feature_cols_all = feature_cols_num + feature_cols_cat
+optional_numeric_defaults = {
+    "load_pct": 0.0,
+    "rpm": 0.0,
+    "humidity_rh": 50.0,
+}
 
 preprocess = ColumnTransformer(
     transformers=[
@@ -108,6 +113,9 @@ def _latest_training_run_model_uri() -> str:
 def _score_pdf(in_pdf: pd.DataFrame, model: Pipeline) -> pd.DataFrame:
     if in_pdf.empty:
         return in_pdf
+    for col_name, default_value in optional_numeric_defaults.items():
+        if col_name not in in_pdf.columns:
+            in_pdf[col_name] = default_value
     score_pdf = in_pdf.dropna(subset=feature_cols_all).copy()
     if score_pdf.empty:
         return score_pdf
@@ -115,6 +123,48 @@ def _score_pdf(in_pdf: pd.DataFrame, model: Pipeline) -> pd.DataFrame:
     score_pdf["prob_fault_next_5m"] = probs
     score_pdf["predicted_fault_next_5m"] = score_pdf["prob_fault_next_5m"] >= 0.5
     return score_pdf
+
+
+def _ensure_output_tables() -> None:
+    spark.sql(
+        f"""
+        CREATE TABLE IF NOT EXISTS {history_table} (
+          machine_id STRING,
+          event_time TIMESTAMP,
+          prob_fault_next_5m DOUBLE,
+          predicted_fault_next_5m BOOLEAN,
+          inference_type STRING,
+          model_run_id STRING,
+          scored_at TIMESTAMP
+        )
+        """
+    )
+    spark.sql(
+        f"""
+        CREATE TABLE IF NOT EXISTS {output_table} (
+          machine_id STRING,
+          event_time TIMESTAMP,
+          prob_fault_next_5m DOUBLE,
+          predicted_fault_next_5m BOOLEAN,
+          inference_type STRING,
+          model_run_id STRING,
+          scored_at TIMESTAMP
+        )
+        """
+    )
+
+
+def _merge_latest_scores(result_df) -> None:
+    result_df.createOrReplaceTempView("tmp_ml_fault_predictions_latest")
+    spark.sql(
+        f"""
+        MERGE INTO {output_table} AS tgt
+        USING tmp_ml_fault_predictions_latest AS src
+          ON tgt.machine_id = src.machine_id
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+        """
+    )
 
 
 with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
@@ -137,10 +187,23 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
     )
 
     if train_model:
+        training_columns = [
+            "machine_id",
+            "event_time",
+            "vibration_mm_s",
+            "temp_c",
+            "throughput_cpm",
+            "state",
+            "fault_code",
+        ]
+        existing_cols = set(spark.table(silver_table).columns)
+        for col_name in optional_numeric_defaults:
+            if col_name in existing_cols:
+                training_columns.append(col_name)
         training_pdf = (
             spark.table(silver_table)
             .where("event_time >= current_timestamp() - INTERVAL 7 DAYS")
-            .select("machine_id", "event_time", "vibration_mm_s", "temp_c", "throughput_cpm", "state", "fault_code")
+            .select(*training_columns)
             .dropna(subset=["machine_id", "event_time"])
             .toPandas()
         )
@@ -180,14 +243,28 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
         model_run_id = model_uri.split("/")[1]
 
     scored_segments = []
+    _ensure_output_tables()
     requested_modes = ["batch", "realtime"] if inference_mode == "both" else [inference_mode]
 
     for mode in requested_modes:
+        source_columns = [
+            "machine_id",
+            "event_time",
+            "vibration_mm_s",
+            "temp_c",
+            "throughput_cpm",
+            "state",
+            "fault_code",
+        ]
+        existing_cols = set(spark.table(silver_table).columns)
+        for col_name in optional_numeric_defaults:
+            if col_name in existing_cols:
+                source_columns.append(col_name)
         if mode == "batch":
             source_pdf = (
                 spark.table(silver_table)
                 .where(f"event_time >= current_timestamp() - INTERVAL {batch_lookback_hours} HOURS")
-                .select("machine_id", "event_time", "vibration_mm_s", "temp_c", "throughput_cpm", "state", "fault_code")
+                .select(*source_columns)
                 .dropna(subset=["machine_id", "event_time"])
                 .toPandas()
             )
@@ -195,7 +272,7 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
             source_pdf = (
                 spark.table(silver_table)
                 .where(f"event_time >= current_timestamp() - INTERVAL {realtime_lookback_minutes} MINUTES")
-                .select("machine_id", "event_time", "vibration_mm_s", "temp_c", "throughput_cpm", "state", "fault_code")
+                .select(*source_columns)
                 .dropna(subset=["machine_id", "event_time"])
                 .toPandas()
             )
@@ -259,12 +336,7 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
                 ]
             ]
         )
-        (
-            result_df.write.mode("overwrite")
-            .option("overwriteSchema", "true")
-            .format("delta")
-            .saveAsTable(output_table)
-        )
+        _merge_latest_scores(result_df)
 
         mlflow.log_metrics(
             {

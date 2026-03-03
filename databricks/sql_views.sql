@@ -11,6 +11,17 @@ SELECT
   vibration_mm_s,
   temp_c,
   throughput_cpm,
+  rpm,
+  load_pct,
+  humidity_rh,
+  current_a,
+  power_kw,
+  power_factor,
+  voltage_v,
+  pressure_bar,
+  flow_rate_lpm,
+  cycle_count,
+  runtime_hours,
   state,
   fault_code,
   iothub_device_id
@@ -120,6 +131,17 @@ SELECT
   t.vibration_mm_s,
   t.temp_c,
   t.throughput_cpm,
+  t.rpm,
+  t.load_pct,
+  t.humidity_rh,
+  t.current_a,
+  t.power_kw,
+  t.power_factor,
+  t.voltage_v,
+  t.pressure_bar,
+  t.flow_rate_lpm,
+  t.cycle_count,
+  t.runtime_hours,
   h.oee_pct,
   h.availability_pct,
   h.performance_pct,
@@ -141,3 +163,21 @@ SELECT
 FROM latest_telemetry t
 LEFT JOIN latest_health h
   ON t.machine_id = h.machine_id;
+
+CREATE OR REPLACE VIEW vw_machine_slo_status AS
+WITH c AS (
+  SELECT
+    machine_id,
+    telemetry_lag_seconds,
+    ml_lag_seconds
+  FROM vw_machine_current_status
+)
+SELECT
+  COUNT(*) AS machine_count,
+  SUM(CASE WHEN telemetry_lag_seconds <= 60 THEN 1 ELSE 0 END) AS machines_within_telemetry_slo,
+  SUM(CASE WHEN ml_lag_seconds <= 90 THEN 1 ELSE 0 END) AS machines_within_ml_slo,
+  ROUND(100.0 * SUM(CASE WHEN telemetry_lag_seconds <= 60 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS pct_within_telemetry_slo,
+  ROUND(100.0 * SUM(CASE WHEN ml_lag_seconds <= 90 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS pct_within_ml_slo,
+  MAX(telemetry_lag_seconds) AS max_telemetry_lag_seconds,
+  MAX(ml_lag_seconds) AS max_ml_lag_seconds
+FROM c;
