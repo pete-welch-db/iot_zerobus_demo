@@ -185,6 +185,18 @@ databricks bundle run -t dev iot_demo_realtime_workflow
 databricks bundle run -t dev iot_ml_realtime_scoring
 ```
 
+3) Always-on ingestion + pipeline keepalive (recommended for live demo):
+
+- `iothub_to_zerobus_autorun_${bundle.target}` runs every minute to sweep IoT Hub events into Zerobus/raw.
+- `iot_pipeline_keepalive_${bundle.target}` runs every 5 minutes to ensure the continuous DLT pipeline stays active.
+
+You can run once to verify jobs are healthy:
+
+```bash
+databricks bundle run -t dev iothub_to_zerobus_autorun
+databricks bundle run -t dev iot_pipeline_keepalive
+```
+
 The end-to-end workflow includes preflight checks, Zerobus setup, IoT Hub bridge, medallion refresh, batch+realtime ML scoring, semantic view refresh, UC metric view refresh, Genie refresh, and output validation.
 
 ## Expected Tables and Views
