@@ -21,6 +21,15 @@ variables:
   mlflow_experiment:
     description: MLflow experiment path
     default: /Shared/iot_zerobus_demo
+  sql_warehouse_id:
+    description: SQL warehouse ID used by AI/BI and Genie assets
+    default: "148ccb90800933a1"
+  genie_space_name:
+    description: Display name for Genie space
+    default: Manufacturing Command Center
+  genie_space_id:
+    description: Optional existing Genie space ID to force update
+    default: "__AUTO__"
   zerobus_workspace_id:
     description: Databricks workspace ID for Zerobus endpoint derivation
     default: "984752964297111"
@@ -42,6 +51,12 @@ variables:
   zerobus_sp_client_secret_key:
     description: Secret key name for service principal client secret
     default: zerobus_sp_client_secret
+  iothub_eventhubs_connection_secret_key:
+    description: Secret key name holding IoT Hub Event Hubs-compatible connection string
+    default: iothub_eventhubs_connection_string
+  iothub_bridge_checkpoint_path:
+    description: Checkpoint location for IoT Hub to Zerobus bridge streaming job
+    default: dbfs:/tmp/iot_zerobus_demo/checkpoints/iothub_bridge
   zerobus_run_smoke_ingest:
     description: Whether zerobus setup job writes a single test record
     default: "false"

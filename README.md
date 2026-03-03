@@ -49,6 +49,8 @@ Arduino-to-Databricks predictive maintenance and OEE demo using Azure IoT Hub, Z
 - `databricks/ml_anomaly_notebook.py`: anomaly scoring training/output script.
 - `databricks/ml_state_prediction_notebook.py`: fault prediction training/output script.
 - `databricks/sql_views.sql`: curated SQL semantic layer.
+- `databricks/manufacturing_command_center_dashboard.sql`: AI/BI dashboard query pack.
+- `databricks/genie_manufacturing_command_center.md`: Genie Space instruction and prompt pack.
 - `databricks/dashboard_notes.md`: dashboard implementation guidance.
 - `databricks/genie_space_notes.md`: Genie scope and instruction guidance.
 - `databricks.yml`: Databricks Asset Bundle root configuration.
@@ -189,7 +191,25 @@ databricks bundle run -t dev iot_pipeline_refresh
 databricks bundle run -t dev iot_ml_scoring_manual
 ```
 
-Create/update SQL views using `databricks/sql_views.sql` in Databricks SQL editor (or add a workspace-specific SQL task/job).
+4) Refresh semantic views:
+
+```bash
+databricks bundle run -t dev semantic_layer_refresh
+```
+
+5) Create/update Genie Space (idempotent):
+
+```bash
+databricks bundle run -t dev genie_space_refresh
+```
+
+6) One-click end-to-end demo workflow:
+
+```bash
+databricks bundle run -t dev iot_demo_realtime_workflow
+```
+
+Create/update SQL views using `databricks/sql_views.sql` (or run `semantic_layer_refresh` job above).
 
 ## Expected Tables and Views
 
@@ -205,6 +225,20 @@ Views:
 - `vw_machine_telemetry_live`
 - `vw_machine_health`
 - `dim_machine`
+- `vw_machine_current_status`
+
+## Manufacturing Command Center Dashboard + Genie
+
+1. Build Databricks AI/BI dashboard named `Manufacturing Command Center` using queries in:
+   - `databricks/manufacturing_command_center_dashboard.sql`
+2. Create/update Genie Space named `Manufacturing Command Center` via:
+   - `databricks/deploy_genie_space.py`
+   - `databricks/genie_manufacturing_command_center.md` (context reference)
+3. Include only curated views in Genie:
+   - `vw_machine_telemetry_live`
+   - `vw_machine_health`
+   - `vw_machine_current_status`
+   - `dim_machine`
 
 ## Verification Checklist
 

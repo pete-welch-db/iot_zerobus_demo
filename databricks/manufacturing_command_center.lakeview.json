@@ -1,0 +1,686 @@
+{
+  "datasets": [
+    {
+      "name": "ds_filter_machine",
+      "displayName": "Filter Machine",
+      "queryLines": [
+        "SELECT DISTINCT machine_id FROM welch.iot_demo_dev.vw_machine_current_status ORDER BY machine_id"
+      ]
+    },
+    {
+      "name": "ds_filter_state",
+      "displayName": "Filter State",
+      "queryLines": [
+        "SELECT DISTINCT state FROM welch.iot_demo_dev.vw_machine_telemetry_live ORDER BY state"
+      ]
+    },
+    {
+      "name": "ds_live_telemetry",
+      "displayName": "Live Telemetry",
+      "queryLines": [
+        "SELECT event_time, machine_id, state, temp_c, vibration_mm_s, throughput_cpm FROM welch.iot_demo_dev.vw_machine_telemetry_live"
+      ]
+    },
+    {
+      "name": "ds_health_window",
+      "displayName": "Health by Window",
+      "queryLines": [
+        "SELECT machine_id, window_end, oee_pct, availability_pct, performance_pct, quality_pct, anomaly_score, prob_fault_next_5m FROM welch.iot_demo_dev.vw_machine_health"
+      ]
+    },
+    {
+      "name": "ds_current_status",
+      "displayName": "Current Status",
+      "queryLines": [
+        "SELECT machine_id, state, last_event_time, oee_pct, anomaly_score, prob_fault_next_5m, throughput_cpm, temp_c, vibration_mm_s, telemetry_lag_seconds, ml_lag_seconds FROM welch.iot_demo_dev.vw_machine_current_status"
+      ]
+    },
+    {
+      "name": "ds_downtime",
+      "displayName": "Downtime by Window",
+      "queryLines": [
+        "SELECT machine_id, window_end, (time_in_stopped_s + time_in_fault_s) AS downtime_s FROM welch.iot_demo_dev.vw_machine_health"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "manufacturing_command_center",
+      "displayName": "Manufacturing Command Center",
+      "layoutVersion": "GRID_V1",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Manufacturing Command Center",
+                "**Real-time operations, risk, and OEE**"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_machine",
+            "queries": [
+              {
+                "name": "machine_0_q",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              },
+              {
+                "name": "machine_1_q",
+                "query": {
+                  "datasetName": "ds_health_window",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              },
+              {
+                "name": "machine_2_q",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              },
+              {
+                "name": "machine_3_q",
+                "query": {
+                  "datasetName": "ds_downtime",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "machine_id",
+                    "displayName": "Machine",
+                    "queryName": "machine_0_q"
+                  },
+                  {
+                    "fieldName": "machine_id",
+                    "displayName": "Machine",
+                    "queryName": "machine_1_q"
+                  },
+                  {
+                    "fieldName": "machine_id",
+                    "displayName": "Machine",
+                    "queryName": "machine_2_q"
+                  },
+                  {
+                    "fieldName": "machine_id",
+                    "displayName": "Machine",
+                    "queryName": "machine_3_q"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Machine"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_state",
+            "queries": [
+              {
+                "name": "state_0_q",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              },
+              {
+                "name": "state_1_q",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "state",
+                    "displayName": "State",
+                    "queryName": "state_0_q"
+                  },
+                  {
+                    "fieldName": "state",
+                    "displayName": "State",
+                    "queryName": "state_1_q"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "State"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 1,
+            "width": 2,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_oee",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    {
+                      "name": "fleet_oee_pct",
+                      "expression": "AVG(`oee_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "fleet_oee_pct",
+                  "displayName": "%"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Fleet OEE %"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_risk",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    {
+                      "name": "avg_risk",
+                      "expression": "AVG(`prob_fault_next_5m`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_risk",
+                  "displayName": "Risk"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Fault Risk"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_anomaly",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    {
+                      "name": "avg_anomaly",
+                      "expression": "AVG(`anomaly_score`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_anomaly",
+                  "displayName": "Score"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Anomaly Score"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_telemetry_lag",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    {
+                      "name": "avg_telemetry_lag_s",
+                      "expression": "AVG(`telemetry_lag_seconds`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_telemetry_lag_s",
+                  "displayName": "sec"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Telemetry Lag"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_ml_lag",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    {
+                      "name": "avg_ml_lag_s",
+                      "expression": "AVG(`ml_lag_seconds`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_ml_lag_s",
+                  "displayName": "sec"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg ML Scoring Lag"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "temp_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "event_time",
+                      "expression": "`event_time`"
+                    },
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "temp_c",
+                      "expression": "`temp_c`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_time",
+                  "displayName": "Time",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "temp_c",
+                  "displayName": "Temp C",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Temperature Trend"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "vibration_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "event_time",
+                      "expression": "`event_time`"
+                    },
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "vibration_mm_s",
+                      "expression": "`vibration_mm_s`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_time",
+                  "displayName": "Time",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "vibration_mm_s",
+                  "displayName": "Vibration mm/s",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Vibration Trend"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 4,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "risk_ranking",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "prob_fault_next_5m",
+                      "expression": "`prob_fault_next_5m`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "prob_fault_next_5m",
+                  "displayName": "Fault Risk",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Machine Risk Ranking"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "downtime_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_downtime",
+                  "fields": [
+                    {
+                      "name": "window_end",
+                      "expression": "`window_end`"
+                    },
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "downtime_s",
+                      "expression": "`downtime_s`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "window_end",
+                  "displayName": "Window End",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "downtime_s",
+                  "displayName": "Downtime (s)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Downtime by Window"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 6,
+            "height": 4
+          }
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
