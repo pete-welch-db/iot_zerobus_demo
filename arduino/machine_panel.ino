@@ -395,23 +395,45 @@ void publishMqttJson(const TelemetrySample& s) {
   char* hum = humBuf;    while (*hum == ' ') hum++;
 
   char payload[512];
+  float loadPct = constrain(((float)s.throughput / 120.0) * 100.0, 0.0, 100.0);
+  float voltageV = 230.0;
+  float currentA = s.currentAmps;
+  float powerFactor = 0.92;
+  float powerKw = (voltageV * currentA * powerFactor * 1.732) / 1000.0;
+  float pressureBar = max(1.0, 2.5 + loadPct / 45.0);
+  float flowRateLpm = max(5.0, 40.0 + ((float)s.throughput * 0.95));
+  char loadBuf[16], pkwBuf[16], pfBuf[16], voltBuf[16], pressureBuf[16], flowBuf[16];
+  dtostrf(loadPct, 1, 2, loadBuf);
+  dtostrf(powerKw, 1, 3, pkwBuf);
+  dtostrf(powerFactor, 1, 3, pfBuf);
+  dtostrf(voltageV, 1, 1, voltBuf);
+  dtostrf(pressureBar, 1, 3, pressureBuf);
+  dtostrf(flowRateLpm, 1, 2, flowBuf);
+  char* load = loadBuf; while (*load == ' ') load++;
+  char* pkw = pkwBuf; while (*pkw == ' ') pkw++;
+  char* pf = pfBuf; while (*pf == ' ') pf++;
+  char* volt = voltBuf; while (*volt == ' ') volt++;
+  char* pressure = pressureBuf; while (*pressure == ' ') pressure++;
+  char* flow = flowBuf; while (*flow == ' ') flow++;
   if (strcmp(s.faultCode, "NONE") == 0) {
     snprintf(
       payload, sizeof(payload),
       "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,"
       "\"rpm\":%d,\"current_amps\":%s,\"humidity_pct\":%s,"
+      "\"load_pct\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":%s,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,"
       "\"state\":\"%s\",\"fault_code\":null,\"ts\":null}",
       MACHINE_ID, vib, temp, s.throughput,
-      s.rpm, cur, hum, s.state
+      s.rpm, cur, hum, load, pkw, pf, volt, pressure, flow, s.state
     );
   } else {
     snprintf(
       payload, sizeof(payload),
       "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,"
       "\"rpm\":%d,\"current_amps\":%s,\"humidity_pct\":%s,"
+      "\"load_pct\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":%s,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,"
       "\"state\":\"%s\",\"fault_code\":\"%s\",\"ts\":null}",
       MACHINE_ID, vib, temp, s.throughput,
-      s.rpm, cur, hum, s.state, s.faultCode
+      s.rpm, cur, hum, load, pkw, pf, volt, pressure, flow, s.state, s.faultCode
     );
   }
 

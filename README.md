@@ -12,7 +12,7 @@ Arduino-to-Databricks predictive maintenance and OEE demo using Azure IoT Hub, Z
    - Same Arduino sketch emits serial CSV.
    - Mac Python sender republishes to Azure IoT Hub over MQTT.
 3. Azure IoT Hub:
-   - Receives device telemetry (`arduino-panel`).
+   - Receives device telemetry (`iotdev-0000` physical + `iotdev-0001..0100` virtual).
    - Exposes built-in Event Hubs-compatible endpoint.
 4. Databricks:
    - Zerobus/Lakeflow connector ingests raw messages.
@@ -88,7 +88,8 @@ cp arduino/secrets.example.h arduino/secrets.h
 3. Edit `arduino/secrets.h`:
    - `WIFI_SSID`, `WIFI_PASSWORD`
    - `IOT_HUB_HOST`
-   - `DEVICE_ID` (default `arduino-panel`)
+   - `DEVICE_ID` (default `iotdev-0000`)
+   - `MACHINE_ID` (default `MC-0000`)
    - `SAS_TOKEN`
 4. Upload `arduino/machine_panel.ino` to the board.
 5. Open Serial Monitor at `115200` to verify:
@@ -112,7 +113,7 @@ pip install -r requirements.txt
 
 ```bash
 python generate_sas_token.py \
-  --resource-uri "iothub-zerobus-demo-welch.azure-devices.net/devices/arduino-panel" \
+  --resource-uri "iothub-zerobus-demo-welch.azure-devices.net/devices/iotdev-0000" \
   --device-key "<device-primary-key>" \
   --ttl-seconds 28800
 ```
@@ -123,9 +124,9 @@ python generate_sas_token.py \
 export SERIAL_PORT="/dev/cu.usbmodem101"
 export BAUD_RATE="115200"
 export IOT_HUB_NAME="iothub-zerobus-demo-welch"
-export DEVICE_ID="arduino-panel"
+export DEVICE_ID="iotdev-0000"
 export SAS_TOKEN="<paste generated SharedAccessSignature token>"
-export MACHINE_ID="MACH_A"
+export MACHINE_ID="MC-0000"
 python sender.py
 ```
 
@@ -136,8 +137,9 @@ Both modes should publish the same payload fields:
 
 For demo-scale simulation and repeatable fault training datasets, use:
 
-- `edge-python/simulate_fleet_iothub.py`: publish live telemetry for many virtual devices to Azure IoT Hub.
-- `edge-python/generate_fault_training_data.py`: generate large synthetic datasets with threshold-driven fault behavior.
+- `edge-python/simulate_fleet_iothub.py --mode stream`: publish live telemetry for many virtual devices to Azure IoT Hub.
+- `edge-python/simulate_fleet_iothub.py --mode export-training`: generate threshold-driven training data from the same scenario engine.
+- `edge-python/generate_fault_training_data.py`: temporary compatibility wrapper (deprecated).
 
 ### 1) Simulate many devices to IoT Hub
 
@@ -155,17 +157,42 @@ python simulate_fleet_iothub.py \
 
 ### 1a) Auto-provision IoT Hub devices for simulator
 
-Use Azure CLI to create or reuse device identities and emit a simulator manifest.
+Use Azure CLI to reset and reprovision all demo identities (1 physical + 100 virtual):
+
+```bash
+TARGET=dev IOTHUB_NAME="iothub-zerobus-demo-welch" scripts/demo_reset_devices.sh
+```
+
+This writes:
+- `edge-python/devices.json` for virtual fleet simulation (`iotdev-0001..0100` -> `MC-0001..0100`)
+- `edge-python/arduino_device.json` for the physical device (`iotdev-0000` -> `MC-0000`)
+
+If you only need virtual create/reuse without deleting all identities:
 
 ```bash
 cd edge-python
 python autoprovision_iothub_devices.py \
   --iothub-name "iothub-zerobus-demo-welch" \
-  --count 250 \
-  --device-prefix "sim-device" \
-  --machine-prefix "MACH" \
+  --count 100 \
+  --device-prefix "iotdev" \
+  --machine-prefix "MC" \
   --padding 4 \
   --output-file "devices.json"
+```
+
+### 1b) Regenerate Arduino `secrets.h` with deterministic device identity
+
+```bash
+cd edge-python
+python generate_arduino_secrets.py \
+  --iothub-host "iothub-zerobus-demo-welch.azure-devices.net" \
+  --device-id "iotdev-0000" \
+  --machine-id "MC-0000" \
+  --device-key "<physical-device-primary-key>" \
+  --wifi-ssid "<wifi-ssid>" \
+  --wifi-password "<wifi-password>" \
+  --ttl-seconds 28800 \
+  --output-file "../arduino/secrets.h"
 ```
 
 Then run:
@@ -181,9 +208,10 @@ python simulate_fleet_iothub.py \
 
 ```bash
 cd edge-python
-python generate_fault_training_data.py \
-  --num-devices 250 \
-  --samples-per-device 8000 \
+python simulate_fleet_iothub.py \
+  --mode export-training \
+  --num-devices 100 \
+  --target-total-records 10000 \
   --sample-interval-seconds 5 \
   --output-jsonl "../data/synthetic_fault_training.jsonl" \
   --output-csv "../data/synthetic_fault_training.csv"
@@ -196,7 +224,7 @@ The generated rows include `threshold_crossed` and `label_fault_next_5m` to supp
 Follow `infra/azure_iot_hub_setup.md` to:
 
 - Create IoT Hub.
-- Register device `arduino-panel`.
+- Register device `iotdev-0000`.
 - Create consumer group `zerobus-lakeflow`.
 - Capture built-in Event Hubs-compatible endpoint/path for Zerobus/Lakeflow.
 
@@ -229,14 +257,25 @@ databricks secrets put-secret iot_zerobus_demo zerobus_sp_client_id
 databricks secrets put-secret iot_zerobus_demo zerobus_sp_client_secret
 ```
 
+### Slack alerting status
+
+Slack alerting is currently disabled and archived under `z_archive/slack/`.
+
 ## Deploy via Databricks Asset Bundles (DABs)
 
 From repo root:
 
 ```bash
 databricks bundle validate -t dev
-databricks bundle deploy -t dev
+
+# Optional: provision autoscaling Lakebase and emit metadata contract
+scripts/provision_lakebase_autoscaling.sh
+
+# Deploy with cadence mode (demo=1 minute, steady=5 minutes)
+TARGET=dev MODE=demo scripts/deploy_with_cadence.sh
 ```
+
+`scripts/deploy_with_cadence.sh` handles cadence deployment for ingest, ML, and Lakebase mirror.
 
 1) Run one-click end-to-end demo workflow (recommended):
 
@@ -255,10 +294,10 @@ databricks bundle run -t dev iot_ml_realtime_scoring
 Use scripted commands for deterministic demo execution:
 
 ```bash
-# Physical device only (MACH_A)
-TARGET=dev MACHINE_ID=MACH_A scripts/demo_go.sh
+# Physical device only (MC-0000)
+TARGET=dev MACHINE_ID=MC-0000 scripts/demo_go.sh
 
-# Add virtual fleet
+# Add virtual fleet (~10k records by default)
 TARGET=dev scripts/demo_generate.sh
 
 # Stop continuous ingest/DLT and queued runs
@@ -275,7 +314,7 @@ TARGET=dev scripts/demo_stop.sh
 Use `go` to ensure both continuous services are running before the talk track:
 
 ```bash
-TARGET=dev MACHINE_ID=MACH_A scripts/demo_go.sh
+TARGET=dev MACHINE_ID=MC-0000 scripts/demo_go.sh
 ```
 
 Troubleshooting:
@@ -327,7 +366,7 @@ UC metric views:
 
 1. Direct mode connectivity
    - Uno joins hotspot/WiFi and prints local IP.
-   - MQTT connects to IoT Hub and publishes on `devices/arduino-panel/messages/events/`.
+   - MQTT connects to IoT Hub and publishes on `devices/iotdev-0000/messages/events/`.
 2. Fallback mode (if needed)
    - Python sender logs valid JSON with `machine_id`, metrics, `state`, `fault_code`, and UTC `ts`.
 3. Bronze ingest
@@ -343,6 +382,8 @@ UC metric views:
 8. Business story interaction
    - Pot changes affect trends.
    - RUN/STOP and FAULT button actions change state and throughput as expected.
+9. Slack alerting
+   - Disabled by design in the current code path.
 
 ## Demo-Day Switching Checklist
 
@@ -351,11 +392,11 @@ UC metric views:
 3. Reuse the same `DEVICE_ID` and payload schema to avoid downstream changes.
 4. Continue dashboard/Genie demo without changing Databricks pipeline assets.
 
-### Demo-day quick recovery (`MACH_A`)
+### Demo-day quick recovery (`MC-0000`)
 
-- If `MACH_A` shows `STOPPED` and should be running:
+- If `MC-0000` shows `STOPPED` and should be running:
   1. Press the RUN/STOP button once on the Arduino.
-  2. Run `TARGET=dev MACHINE_ID=MACH_A scripts/demo_go.sh`.
+  2. Run `TARGET=dev MACHINE_ID=MC-0000 scripts/demo_go.sh`.
   3. Refresh dashboard and verify `state = RUN` in `vw_machine_current_status`.
 - If you need to prove fault response:
   - Raise temperature/vibration pots above threshold.
@@ -364,8 +405,8 @@ UC metric views:
 ## Demo SLO Targets
 
 - Telemetry visible in dashboard: `< 30-60s` after bridge run.
-- Fleet average `telemetry_lag_seconds`: `< 60s`.
-- Fleet average `ml_lag_seconds`: `< 90s` after realtime scoring.
+- Fleet average `telemetry_lag_ms`: `< 60000`.
+- Fleet average `ml_lag_ms`: `< 90000` after realtime scoring.
 
 ## Notes
 

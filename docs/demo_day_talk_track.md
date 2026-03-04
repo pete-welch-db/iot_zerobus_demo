@@ -1,12 +1,12 @@
 # Demo Day Talk Track
 
-This runbook is for an on-site conference room demo with a physical Arduino (`MACH_A`) and optional virtual scale-out (`MACH_####`).
+This runbook is for an on-site conference room demo with a physical Arduino (`MC-0000`) and optional virtual scale-out (`MC-####`).
 
 ## Pre-demo Setup (5-10 min)
 
 1. Turn on phone hotspot.
 2. Plug Arduino in via USB and confirm serial logs show WiFi + MQTT connected.
-3. Open Databricks dashboard (`Manufacturing Command Center`) and set machine filter to `MACH_A`.
+3. Open Databricks dashboard (`Manufacturing Command Center`) and set machine filter to `MC-0000`.
 4. In terminal from repo root, ensure scripts are executable:
    - `scripts/demo_go.sh`
    - `scripts/demo_generate.sh`
@@ -22,7 +22,7 @@ This runbook is for an on-site conference room demo with a physical Arduino (`MA
 
 ```bash
 # Physical-device-first phase
-TARGET=dev MACHINE_ID=MACH_A scripts/demo_go.sh
+TARGET=dev MACHINE_ID=MC-0000 scripts/demo_go.sh
 
 # Scale-out phase (3 minutes default)
 TARGET=dev scripts/demo_generate.sh
@@ -44,8 +44,8 @@ TARGET=dev scripts/demo_stop.sh
 ### 2) `go` Phase: Physical Device Only (3-5 min)
 
 1. Say: "Go."
-2. Run: `TARGET=dev MACHINE_ID=MACH_A scripts/demo_go.sh`.
-3. Keep dashboard filtered to `MACH_A`.
+2. Run: `TARGET=dev MACHINE_ID=MC-0000 scripts/demo_go.sh`.
+3. Keep dashboard filtered to `MC-0000`.
 4. Narrate:
    - temperature/vibration/throughput update in near real time,
    - telemetry lag and ML lag counters stay low,
@@ -77,16 +77,16 @@ TARGET=dev scripts/demo_stop.sh
 ## Rehearsal Acceptance Criteria (SLO Targets)
 
 - Telemetry visible in dashboard: `< 30-60s` after event ingestion run.
-- `telemetry_lag_seconds` fleet average: `< 60s` in steady state.
-- `ml_lag_seconds` fleet average: `< 90s` after realtime ML scoring run.
-- `go` phase confirms `MACH_A` freshness and ML score update.
-- `generate` phase adds `MACH_####` devices and updates risk ranking.
+- `telemetry_lag_ms` fleet average: `< 60000` in steady state.
+- `ml_lag_ms` fleet average: `< 90000` after realtime ML scoring run.
+- `go` phase confirms `MC-0000` freshness and ML score update.
+- `generate` phase adds `MC-####` devices and updates risk ranking.
 
 ## Quick Recovery
 
-- If `MACH_A` appears `STOPPED` unexpectedly:
+- If `MC-0000` appears `STOPPED` unexpectedly:
   - press RUN/STOP button once on Arduino,
-  - rerun `TARGET=dev MACHINE_ID=MACH_A scripts/demo_go.sh`,
+  - rerun `TARGET=dev MACHINE_ID=MC-0000 scripts/demo_go.sh`,
   - confirm latest state in `vw_machine_current_status`.
 - If jobs are queued:
   - run `TARGET=dev scripts/demo_stop.sh`,

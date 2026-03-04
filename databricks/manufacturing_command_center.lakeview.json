@@ -18,14 +18,14 @@
       "name": "ds_current_status",
       "displayName": "Current Status",
       "queryLines": [
-        "SELECT machine_id, state, last_event_time, oee_pct, anomaly_score, prob_fault_next_5m, throughput_cpm, temp_c, vibration_mm_s, rpm, current_amps, humidity_pct, load_pct, power_kw, power_factor, voltage_v, pressure_bar, flow_rate_lpm, telemetry_lag_seconds, ml_lag_seconds FROM welch.iot_demo_dev.vw_machine_current_status"
+        "SELECT machine_id, state, last_event_time, oee_pct, anomaly_score, prob_fault_next_5m, throughput_cpm, temp_c, vibration_mm_s, rpm, current_amps, humidity_pct, load_pct, power_kw, power_factor, voltage_v, pressure_bar, flow_rate_lpm, telemetry_lag_ms, ml_lag_ms FROM welch.iot_demo_dev.vw_machine_current_status"
       ]
     },
     {
       "name": "ds_device_health_latency",
       "displayName": "Device Health + Latency",
       "queryLines": [
-        "SELECT s.machine_id, d.line_name, s.state, s.last_event_time, s.telemetry_lag_seconds, s.ml_lag_seconds, s.temp_c, s.vibration_mm_s, s.throughput_cpm, s.rpm, s.current_amps, s.humidity_pct, s.load_pct, s.power_kw, s.power_factor, s.voltage_v, s.pressure_bar, s.flow_rate_lpm, s.anomaly_score, s.prob_fault_next_5m, CASE WHEN s.prob_fault_next_5m >= 0.7 THEN 'HIGH' WHEN s.prob_fault_next_5m >= 0.4 THEN 'MEDIUM' ELSE 'LOW' END AS fault_band FROM welch.iot_demo_dev.vw_machine_current_status s LEFT JOIN welch.iot_demo_dev.dim_machine d ON s.machine_id = d.machine_id"
+        "SELECT s.machine_id, d.line_name, s.state, s.last_event_time, s.telemetry_lag_ms, s.ml_lag_ms, s.temp_c, s.vibration_mm_s, s.throughput_cpm, s.rpm, s.current_amps, s.humidity_pct, s.load_pct, s.power_kw, s.power_factor, s.voltage_v, s.pressure_bar, s.flow_rate_lpm, s.anomaly_score, s.prob_fault_next_5m, CASE WHEN s.prob_fault_next_5m >= 0.7 THEN 'HIGH' WHEN s.prob_fault_next_5m >= 0.4 THEN 'MEDIUM' ELSE 'LOW' END AS fault_band FROM welch.iot_demo_dev.vw_machine_current_status s LEFT JOIN welch.iot_demo_dev.dim_machine d ON s.machine_id = d.machine_id"
       ]
     },
     {
@@ -349,7 +349,7 @@
                   "fields": [
                     {
                       "name": "avg_telemetry_lag_s",
-                      "expression": "AVG(`telemetry_lag_seconds`)"
+                      "expression": "AVG(`telemetry_lag_ms`)"
                     }
                   ],
                   "disaggregated": false
@@ -362,7 +362,7 @@
               "encodings": {
                 "value": {
                   "fieldName": "avg_telemetry_lag_s",
-                  "displayName": "sec"
+                  "displayName": "ms"
                 }
               },
               "frame": {
@@ -389,7 +389,7 @@
                   "fields": [
                     {
                       "name": "avg_ml_lag_s",
-                      "expression": "AVG(`ml_lag_seconds`)"
+                      "expression": "AVG(`ml_lag_ms`)"
                     }
                   ],
                   "disaggregated": false
@@ -402,7 +402,7 @@
               "encodings": {
                 "value": {
                   "fieldName": "avg_ml_lag_s",
-                  "displayName": "sec"
+                  "displayName": "ms"
                 }
               },
               "frame": {
@@ -693,12 +693,12 @@
                       "expression": "`fault_band`"
                     },
                     {
-                      "name": "telemetry_lag_seconds",
-                      "expression": "`telemetry_lag_seconds`"
+                      "name": "telemetry_lag_ms",
+                      "expression": "`telemetry_lag_ms`"
                     },
                     {
-                      "name": "ml_lag_seconds",
-                      "expression": "`ml_lag_seconds`"
+                      "name": "ml_lag_ms",
+                      "expression": "`ml_lag_ms`"
                     },
                     {
                       "name": "anomaly_score",
@@ -787,12 +787,12 @@
                     "displayName": "Risk Band"
                   },
                   {
-                    "fieldName": "telemetry_lag_seconds",
-                    "displayName": "Telemetry Lag (s)"
+                    "fieldName": "telemetry_lag_ms",
+                    "displayName": "Telemetry Lag (ms)"
                   },
                   {
-                    "fieldName": "ml_lag_seconds",
-                    "displayName": "ML Lag (s)"
+                    "fieldName": "ml_lag_ms",
+                    "displayName": "ML Lag (ms)"
                   },
                   {
                     "fieldName": "anomaly_score",
@@ -964,7 +964,7 @@
                 "query": {
                   "datasetName": "ds_current_status",
                   "fields": [
-                    { "name": "avg_lag", "expression": "AVG(`telemetry_lag_seconds`)" }
+                    { "name": "avg_lag", "expression": "AVG(`telemetry_lag_ms`)" }
                   ],
                   "disaggregated": false
                 }
@@ -974,7 +974,7 @@
               "version": 2,
               "widgetType": "counter",
               "encodings": {
-                "value": { "fieldName": "avg_lag", "displayName": "seconds" }
+                "value": { "fieldName": "avg_lag", "displayName": "ms" }
               },
               "frame": { "showTitle": true, "title": "Avg Telemetry Lag" }
             }
@@ -990,7 +990,7 @@
                 "query": {
                   "datasetName": "ds_current_status",
                   "fields": [
-                    { "name": "avg_ml_lag", "expression": "AVG(`ml_lag_seconds`)" }
+                    { "name": "avg_ml_lag", "expression": "AVG(`ml_lag_ms`)" }
                   ],
                   "disaggregated": false
                 }
@@ -1000,7 +1000,7 @@
               "version": 2,
               "widgetType": "counter",
               "encodings": {
-                "value": { "fieldName": "avg_ml_lag", "displayName": "seconds" }
+                "value": { "fieldName": "avg_ml_lag", "displayName": "ms" }
               },
               "frame": { "showTitle": true, "title": "Avg ML Scoring Lag" }
             }

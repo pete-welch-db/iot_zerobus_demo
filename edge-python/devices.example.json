@@ -1,12 +1,12 @@
 [
   {
-    "device_id": "sim-device-001",
-    "machine_id": "MACH_001",
+    "device_id": "iotdev-0001",
+    "machine_id": "MC-0001",
     "device_key": "BASE64_DEVICE_KEY_001"
   },
   {
-    "device_id": "sim-device-002",
-    "machine_id": "MACH_002",
+    "device_id": "iotdev-0002",
+    "machine_id": "MC-0002",
     "device_key": "BASE64_DEVICE_KEY_002"
   }
 ]

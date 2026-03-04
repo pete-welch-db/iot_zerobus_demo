@@ -1,4 +1,5 @@
 import argparse
+import csv
 import json
 import logging
 import math
@@ -6,20 +7,18 @@ import random
 import ssl
 import threading
 import time
+import warnings
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import paho.mqtt.client as mqtt
 
 from generate_sas_token import generate_sas_token
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOGGER = logging.getLogger("fleet-simulator")
 
 TARGET_FIELDS = {
@@ -46,30 +45,25 @@ TARGET_FIELDS = {
 class DeviceConfig:
     device_id: str
     machine_id: str
-    device_key: str
+    device_key: Optional[str] = None
 
 
-class DeviceRuntime:
+class ScenarioRuntime:
+    """Shared telemetry scenario engine used for stream and export modes."""
+
     def __init__(
         self,
-        config: DeviceConfig,
-        iothub_name: str,
-        token_ttl_seconds: int,
-        message_rate_hz: float,
+        machine_id: str,
         fault_period_seconds: int,
         temp_fault_threshold: float,
         vibration_fault_threshold: float,
         seed: int,
     ) -> None:
-        self.config = config
-        self.iothub_name = iothub_name
-        self.token_ttl_seconds = token_ttl_seconds
-        self.message_rate_hz = max(0.1, message_rate_hz)
+        self.machine_id = machine_id
         self.fault_period_seconds = max(30, fault_period_seconds)
         self.temp_fault_threshold = temp_fault_threshold
         self.vibration_fault_threshold = vibration_fault_threshold
         self.random = random.Random(seed)
-        self.phase_start = time.time()
 
         self.temp_c = self.random.uniform(58.0, 67.0)
         self.vibration_mm_s = self.random.uniform(2.5, 4.5)
@@ -80,49 +74,8 @@ class DeviceRuntime:
         self.state = "RUN"
         self.fault_code = None
 
-        self.host = f"{iothub_name}.azure-devices.net"
-        self.topic = f"devices/{config.device_id}/messages/events/"
-        self.username = f"{self.host}/{config.device_id}/?api-version=2021-04-12"
-        self._sas_expiry = 0
-        self._connect_mqtt()
-
-    def _build_sas(self) -> str:
-        resource_uri = f"{self.host}/devices/{self.config.device_id}"
-        self._sas_expiry = int(time.time()) + self.token_ttl_seconds
-        return generate_sas_token(resource_uri, self.config.device_key, self._sas_expiry)
-
-    def _connect_mqtt(self) -> None:
-        sas = self._build_sas()
-        self.client = mqtt.Client(client_id=self.config.device_id, protocol=mqtt.MQTTv311)
-        self.client.username_pw_set(self.username, sas)
-        self.client.tls_set(cert_reqs=ssl.CERT_REQUIRED, tls_version=ssl.PROTOCOL_TLS_CLIENT)
-        self.client.on_connect = self._on_connect
-        self.client.on_disconnect = self._on_disconnect
-        self.client.connect(self.host, 8883, keepalive=60)
-        self.client.loop_start()
-
-    def _refresh_sas_if_needed(self) -> None:
-        margin = 300
-        if time.time() > (self._sas_expiry - margin):
-            LOGGER.info("Refreshing SAS token for %s", self.config.device_id)
-            self.client.loop_stop()
-            self.client.disconnect()
-            self._connect_mqtt()
-
-    def _on_connect(self, _client: mqtt.Client, _userdata, _flags, rc: int, _props=None) -> None:
-        if rc != 0:
-            LOGGER.error("Device %s failed MQTT connect rc=%s", self.config.device_id, rc)
-
-    def _on_disconnect(self, _client: mqtt.Client, _userdata, rc: int, _props=None) -> None:
-        if rc != 0:
-            LOGGER.warning("Device %s disconnected rc=%s", self.config.device_id, rc)
-
-    def _update_state(self, now: float) -> None:
-        cycle_seconds = now - self.phase_start
-        phase = cycle_seconds % self.fault_period_seconds
-
-        # Phase model:
-        # 0-55% normal run, 55-85% warning ramp, 85-95% fault, 95-100% recovery.
+    def update_state(self, elapsed_seconds: float) -> None:
+        phase = elapsed_seconds % self.fault_period_seconds
         normal_cutoff = 0.55 * self.fault_period_seconds
         warning_cutoff = 0.85 * self.fault_period_seconds
         fault_cutoff = 0.95 * self.fault_period_seconds
@@ -141,14 +94,13 @@ class DeviceRuntime:
         if phase < warning_cutoff:
             self.state = "RUN"
             self.fault_code = None
-            temp_progress = (phase - normal_cutoff) / (warning_cutoff - normal_cutoff)
-            vib_progress = temp_progress
-            self.temp_c = 75.0 + temp_progress * (self.temp_fault_threshold + 8.0 - 75.0)
-            self.vibration_mm_s = 7.0 + vib_progress * (self.vibration_fault_threshold + 2.0 - 7.0)
-            self.throughput_cpm = max(30, int(95 - 50 * temp_progress + self.random.uniform(-2, 2)))
-            self.rpm = int(2400 + temp_progress * 600 + self.random.uniform(-15, 15))
-            self.current_amps = 7.0 + temp_progress * 5.5 + self.random.uniform(-0.3, 0.3)
-            self.humidity_pct = 50.0 + temp_progress * 20.0 + self.random.uniform(-1, 1)
+            progress = (phase - normal_cutoff) / (warning_cutoff - normal_cutoff)
+            self.temp_c = 75.0 + progress * (self.temp_fault_threshold + 8.0 - 75.0)
+            self.vibration_mm_s = 7.0 + progress * (self.vibration_fault_threshold + 2.0 - 7.0)
+            self.throughput_cpm = max(30, int(95 - 50 * progress + self.random.uniform(-2, 2)))
+            self.rpm = int(2400 + progress * 600 + self.random.uniform(-15, 15))
+            self.current_amps = 7.0 + progress * 5.5 + self.random.uniform(-0.3, 0.3)
+            self.humidity_pct = 50.0 + progress * 20.0 + self.random.uniform(-1, 1)
             return
 
         if phase < fault_cutoff:
@@ -180,15 +132,16 @@ class DeviceRuntime:
         self.current_amps = max(0.5, self.current_amps - self.random.uniform(0.3, 0.8))
         self.humidity_pct = max(30.0, self.humidity_pct - self.random.uniform(0.3, 0.8))
 
-    def _build_payload(self) -> Dict[str, Any]:
+    def build_payload(self, event_ts: Optional[datetime] = None) -> Dict[str, Any]:
         load_pct = max(0.0, min(100.0, (self.throughput_cpm / 120.0) * 100.0))
         voltage_v = 230.0
         power_factor = 0.92
         power_kw = (voltage_v * self.current_amps * power_factor * math.sqrt(3)) / 1000.0
         pressure_bar = max(1.0, 2.5 + load_pct / 45.0)
         flow_rate_lpm = max(5.0, 40.0 + (self.throughput_cpm * 0.95))
+        ts = event_ts or datetime.now(timezone.utc)
         return {
-            "machine_id": self.config.machine_id,
+            "machine_id": self.machine_id,
             "vibration_mm_s": round(self.vibration_mm_s, 3),
             "temp_c": round(self.temp_c, 3),
             "throughput_cpm": int(self.throughput_cpm),
@@ -203,20 +156,81 @@ class DeviceRuntime:
             "flow_rate_lpm": round(flow_rate_lpm, 2),
             "state": self.state,
             "fault_code": self.fault_code,
-            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "ts": ts.isoformat().replace("+00:00", "Z"),
         }
 
     def validate_target_fields(self) -> None:
-        payload = self._build_payload()
+        payload = self.build_payload()
         missing = sorted(TARGET_FIELDS.difference(payload.keys()))
         if missing:
-            raise ValueError(f"{self.config.device_id} missing target payload fields: {missing}")
+            raise ValueError(f"{self.machine_id} missing target payload fields: {missing}")
+
+
+class DeviceRuntime(ScenarioRuntime):
+    def __init__(
+        self,
+        config: DeviceConfig,
+        iothub_name: str,
+        token_ttl_seconds: int,
+        message_rate_hz: float,
+        fault_period_seconds: int,
+        temp_fault_threshold: float,
+        vibration_fault_threshold: float,
+        seed: int,
+    ) -> None:
+        super().__init__(
+            machine_id=config.machine_id,
+            fault_period_seconds=fault_period_seconds,
+            temp_fault_threshold=temp_fault_threshold,
+            vibration_fault_threshold=vibration_fault_threshold,
+            seed=seed,
+        )
+        if not config.device_key:
+            raise ValueError(f"Missing device_key for stream mode device {config.device_id}")
+        self.config = config
+        self.token_ttl_seconds = token_ttl_seconds
+        self.message_rate_hz = max(0.1, message_rate_hz)
+        self.phase_start = time.time()
+        self.host = f"{iothub_name}.azure-devices.net"
+        self.topic = f"devices/{config.device_id}/messages/events/"
+        self.username = f"{self.host}/{config.device_id}/?api-version=2021-04-12"
+        self._sas_expiry = 0
+        self._connect_mqtt()
+
+    def _build_sas(self) -> str:
+        resource_uri = f"{self.host}/devices/{self.config.device_id}"
+        self._sas_expiry = int(time.time()) + self.token_ttl_seconds
+        return generate_sas_token(resource_uri, self.config.device_key, self._sas_expiry)
+
+    def _connect_mqtt(self) -> None:
+        sas = self._build_sas()
+        self.client = mqtt.Client(client_id=self.config.device_id, protocol=mqtt.MQTTv311)
+        self.client.username_pw_set(self.username, sas)
+        self.client.tls_set(cert_reqs=ssl.CERT_REQUIRED, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+        self.client.on_connect = self._on_connect
+        self.client.on_disconnect = self._on_disconnect
+        self.client.connect(self.host, 8883, keepalive=60)
+        self.client.loop_start()
+
+    def _refresh_sas_if_needed(self) -> None:
+        if time.time() > (self._sas_expiry - 300):
+            LOGGER.info("Refreshing SAS token for %s", self.config.device_id)
+            self.client.loop_stop()
+            self.client.disconnect()
+            self._connect_mqtt()
+
+    def _on_connect(self, _client: mqtt.Client, _userdata, _flags, rc: int, _props=None) -> None:
+        if rc != 0:
+            LOGGER.error("Device %s failed MQTT connect rc=%s", self.config.device_id, rc)
+
+    def _on_disconnect(self, _client: mqtt.Client, _userdata, rc: int, _props=None) -> None:
+        if rc != 0:
+            LOGGER.warning("Device %s disconnected rc=%s", self.config.device_id, rc)
 
     def publish_once(self) -> None:
         self._refresh_sas_if_needed()
-        now = time.time()
-        self._update_state(now)
-        payload = self._build_payload()
+        self.update_state(time.time() - self.phase_start)
+        payload = self.build_payload()
         result = self.client.publish(self.topic, payload=json.dumps(payload), qos=1)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             LOGGER.error("Publish failed for %s rc=%s", self.config.device_id, result.rc)
@@ -227,50 +241,66 @@ class DeviceRuntime:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Simulate many IoT devices publishing to Azure IoT Hub.")
-    parser.add_argument("--iothub-name", required=True)
-    parser.add_argument("--devices-file", required=True, help="JSON array with device_id, machine_id, device_key")
+    parser = argparse.ArgumentParser(description="Unified IoT telemetry simulator and training exporter.")
+    parser.add_argument("--mode", choices=["stream", "export-training"], default="stream")
+    parser.add_argument("--iothub-name", default="", help="Required for stream mode")
+    parser.add_argument("--devices-file", default="", help="Required for stream mode")
     parser.add_argument("--duration-seconds", type=int, default=300)
+    parser.add_argument("--target-total-records", type=int, default=10000)
     parser.add_argument("--message-rate-hz", type=float, default=1.0)
     parser.add_argument("--fault-period-seconds", type=int, default=180)
     parser.add_argument("--temp-fault-threshold", type=float, default=85.0)
     parser.add_argument("--vibration-fault-threshold", type=float, default=9.5)
     parser.add_argument("--token-ttl-seconds", type=int, default=3600)
     parser.add_argument("--log-every", type=int, default=100)
-    parser.add_argument(
-        "--validate-only",
-        action="store_true",
-        help="Build one payload per device and validate target field coverage, then exit.",
-    )
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--num-devices", type=int, default=100, help="Used by export-training mode")
+    parser.add_argument("--machine-prefix", default="MC", help="Used by export-training mode")
+    parser.add_argument("--device-prefix", default="iotdev", help="Used by export-training mode")
+    parser.add_argument("--padding", type=int, default=4, help="Used by export-training mode")
+    parser.add_argument("--sample-interval-seconds", type=int, default=5, help="Used by export-training mode")
+    parser.add_argument("--output-jsonl", default="synthetic_fault_training.jsonl")
+    parser.add_argument("--output-csv", default="synthetic_fault_training.csv")
+    parser.add_argument("--output-parquet", default="", help="Optional parquet output path (if pandas+pyarrow installed)")
     return parser.parse_args()
 
 
 def load_devices(path: str) -> List[DeviceConfig]:
     raw = json.loads(Path(path).read_text())
-    configs = []
-    for item in raw:
-        configs.append(
-            DeviceConfig(
-                device_id=item["device_id"],
-                machine_id=item.get("machine_id", item["device_id"]),
-                device_key=item["device_key"],
-            )
+    configs = [
+        DeviceConfig(
+            device_id=item["device_id"],
+            machine_id=item.get("machine_id", item["device_id"]),
+            device_key=item.get("device_key"),
         )
+        for item in raw
+    ]
     if not configs:
         raise ValueError("No devices found in devices-file.")
     return configs
 
 
-def run_device_loop(runtime: DeviceRuntime, end_time: float, stats: Dict[str, int], lock: threading.Lock) -> None:
+def run_device_loop(
+    runtime: DeviceRuntime,
+    end_time: float,
+    total_budget: int,
+    global_counter: Dict[str, int],
+    stats: Dict[str, int],
+    lock: threading.Lock,
+) -> None:
     interval = 1.0 / runtime.message_rate_hz
     sent = 0
     try:
         while time.time() < end_time:
+            with lock:
+                if total_budget > 0 and global_counter["sent"] >= total_budget:
+                    break
+                global_counter["sent"] += 1
             started = time.time()
             runtime.publish_once()
             sent += 1
-            elapsed = time.time() - started
-            sleep_for = max(0.0, interval - elapsed)
+            sleep_for = max(0.0, interval - (time.time() - started))
             if sleep_for > 0:
                 time.sleep(sleep_for)
     finally:
@@ -279,8 +309,9 @@ def run_device_loop(runtime: DeviceRuntime, end_time: float, stats: Dict[str, in
             stats[runtime.config.device_id] = sent
 
 
-def main() -> None:
-    args = parse_args()
+def run_stream_mode(args: argparse.Namespace) -> None:
+    if not args.iothub_name or not args.devices_file:
+        raise ValueError("--iothub-name and --devices-file are required in stream mode.")
     devices = load_devices(args.devices_file)
     end_time = time.time() + args.duration_seconds
 
@@ -293,11 +324,10 @@ def main() -> None:
             fault_period_seconds=args.fault_period_seconds,
             temp_fault_threshold=args.temp_fault_threshold,
             vibration_fault_threshold=args.vibration_fault_threshold,
-            seed=hash(device.device_id) % (2**31),
+            seed=args.seed + idx,
         )
-        for device in devices
+        for idx, device in enumerate(devices)
     ]
-
     for runtime in runtimes:
         runtime.validate_target_fields()
     LOGGER.info("Payload field validation passed for %s devices.", len(runtimes))
@@ -310,8 +340,13 @@ def main() -> None:
 
     stats: Dict[str, int] = {}
     lock = threading.Lock()
+    global_counter = {"sent": 0}
     threads = [
-        threading.Thread(target=run_device_loop, args=(runtime, end_time, stats, lock), daemon=True)
+        threading.Thread(
+            target=run_device_loop,
+            args=(runtime, end_time, args.target_total_records, global_counter, stats, lock),
+            daemon=True,
+        )
         for runtime in runtimes
     ]
     for thread in threads:
@@ -328,6 +363,98 @@ def main() -> None:
         avg_per_device,
         args.duration_seconds,
     )
+
+
+def _label_rows(rows: List[Dict[str, Any]], sample_interval_seconds: int) -> List[Dict[str, Any]]:
+    horizon_steps = max(1, int(300 / sample_interval_seconds))
+    flags = [1 if row["is_fault"] else 0 for row in rows]
+    for i in range(len(rows)):
+        rows[i]["label_fault_next_5m"] = 1 if any(flags[i + 1 : i + 1 + horizon_steps]) else 0
+    return rows
+
+
+def run_export_training_mode(args: argparse.Namespace) -> None:
+    if args.num_devices <= 0:
+        raise ValueError("--num-devices must be > 0 in export-training mode.")
+    samples_per_device = max(1, math.ceil(args.target_total_records / args.num_devices))
+    start_ts = datetime.now(timezone.utc) - timedelta(seconds=samples_per_device * args.sample_interval_seconds)
+    all_rows: List[Dict[str, Any]] = []
+
+    for idx in range(1, args.num_devices + 1):
+        suffix = str(idx).zfill(args.padding)
+        machine_id = f"{args.machine_prefix}-{suffix}"
+        runtime = ScenarioRuntime(
+            machine_id=machine_id,
+            fault_period_seconds=args.fault_period_seconds,
+            temp_fault_threshold=args.temp_fault_threshold,
+            vibration_fault_threshold=args.vibration_fault_threshold,
+            seed=args.seed + idx,
+        )
+        runtime.validate_target_fields()
+        machine_rows: List[Dict[str, Any]] = []
+        for step in range(samples_per_device):
+            elapsed = step * args.sample_interval_seconds
+            event_ts = start_ts + timedelta(seconds=elapsed)
+            runtime.update_state(elapsed)
+            payload = runtime.build_payload(event_ts=event_ts)
+            threshold_crossed = (
+                payload["temp_c"] >= args.temp_fault_threshold
+                or payload["vibration_mm_s"] >= args.vibration_fault_threshold
+                or payload["current_amps"] >= 12.0
+            )
+            row = {
+                "event_time": payload["ts"],
+                **payload,
+                "is_fault": payload["state"] == "FAULT",
+                "threshold_crossed": threshold_crossed,
+                "temp_fault_threshold": args.temp_fault_threshold,
+                "vibration_fault_threshold": args.vibration_fault_threshold,
+            }
+            machine_rows.append(row)
+        all_rows.extend(_label_rows(machine_rows, args.sample_interval_seconds))
+
+    jsonl_path = Path(args.output_jsonl)
+    csv_path = Path(args.output_csv)
+    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with jsonl_path.open("w", encoding="utf-8") as jf:
+        for row in all_rows:
+            jf.write(json.dumps(row) + "\n")
+
+    fieldnames = list(all_rows[0].keys()) if all_rows else []
+    with csv_path.open("w", encoding="utf-8", newline="") as cf:
+        writer = csv.DictWriter(cf, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(all_rows)
+
+    if args.output_parquet:
+        try:
+            import pandas as pd
+
+            pq_path = Path(args.output_parquet)
+            pq_path.parent.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(all_rows).to_parquet(pq_path, index=False)
+            LOGGER.info("Parquet: %s", pq_path)
+        except Exception as exc:
+            LOGGER.warning("Skipping parquet export (%s).", exc)
+
+    LOGGER.info("Exported %s training rows for %s devices.", len(all_rows), args.num_devices)
+    LOGGER.info("JSONL: %s", jsonl_path)
+    LOGGER.info("CSV:   %s", csv_path)
+
+
+def main() -> None:
+    args = parse_args()
+    if args.mode == "stream":
+        run_stream_mode(args)
+        return
+    warnings.warn(
+        "Training data export now lives in simulate_fleet_iothub.py --mode export-training.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    run_export_training_mode(args)
 
 
 if __name__ == "__main__":

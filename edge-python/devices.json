@@ -1,102 +1,502 @@
 [
   {
-    "device_id": "sim-device-0001",
-    "machine_id": "MACH_0001",
-    "device_key": "EAvk8xXtakl1MnZzzI5Kkj+mhGKbUBhrvtcEzNfjvlc="
+    "device_id": "iotdev-0001",
+    "machine_id": "MC-0001",
+    "device_key": "HsTV8n7M8jLBHT7vvnQ8P/D4d5U7Dj7+bVCZQpKKrSk="
   },
   {
-    "device_id": "sim-device-0002",
-    "machine_id": "MACH_0002",
-    "device_key": "cBd7CRTUekE/t+zc5P1FS71AzW/6naiEhNaGRefK45E="
+    "device_id": "iotdev-0002",
+    "machine_id": "MC-0002",
+    "device_key": "3R9u6WRu9Csk8hs383JN0ZCYWyWRKfI1gJbP/Ir9EiI="
   },
   {
-    "device_id": "sim-device-0003",
-    "machine_id": "MACH_0003",
-    "device_key": "T6nVc+FhcrZgYQX/Xngj3btqWx+USu/b0WQ9oLMV6EY="
+    "device_id": "iotdev-0003",
+    "machine_id": "MC-0003",
+    "device_key": "WzLZH/KjszuS3LX3VQc75y3Wmtcz0XPvdVziZjjo0MA="
   },
   {
-    "device_id": "sim-device-0004",
-    "machine_id": "MACH_0004",
-    "device_key": "PIaW7PGZiweXh+SCHiDvRG22xaqPJ4+GZcTHiUspm98="
+    "device_id": "iotdev-0004",
+    "machine_id": "MC-0004",
+    "device_key": "R7SEttLJdyXqGdJ4GzPBACAGrUDgZ2USVHTRqlXiiKE="
   },
   {
-    "device_id": "sim-device-0005",
-    "machine_id": "MACH_0005",
-    "device_key": "Ll8zYgRdvnjfYfq3h5egCz7mRxeMvbr52UfELySSJdo="
+    "device_id": "iotdev-0005",
+    "machine_id": "MC-0005",
+    "device_key": "C5bAKNEKQHW6IlJ55wOLeuyqYiamc64mckDUoX7Z/Mw="
   },
   {
-    "device_id": "sim-device-0006",
-    "machine_id": "MACH_0006",
-    "device_key": "q15CJ/8iHVXhVnOsX2s/vOouKmV7WjPIG6bJhaisDUA="
+    "device_id": "iotdev-0006",
+    "machine_id": "MC-0006",
+    "device_key": "kevPvctGZCHbXIadXHErdSF5JrPOYzUCAHyK6VZ0GRM="
   },
   {
-    "device_id": "sim-device-0007",
-    "machine_id": "MACH_0007",
-    "device_key": "6issgQHtn8qXWnp5Z7n8uqdXivo+6YnrQGFUf0ZdNO0="
+    "device_id": "iotdev-0007",
+    "machine_id": "MC-0007",
+    "device_key": "io03R/vvV4Bo6XZ0vGkfCwCSdv3gVJmjMi2pplHnnHw="
   },
   {
-    "device_id": "sim-device-0008",
-    "machine_id": "MACH_0008",
-    "device_key": "ctk0X35YSLyevwrI9bNKc8efqThMdL6JwYKphBdmdww="
+    "device_id": "iotdev-0008",
+    "machine_id": "MC-0008",
+    "device_key": "ddjvG6arWTLD+vHhATe8ZvYEgVyZaSQGQ7bErQn1fqk="
   },
   {
-    "device_id": "sim-device-0009",
-    "machine_id": "MACH_0009",
-    "device_key": "oSBaCMODuP8WCiw9qEUpYuu7TnIHrdENXVJ1ViccFaE="
+    "device_id": "iotdev-0009",
+    "machine_id": "MC-0009",
+    "device_key": "GmJjfoRBDWUuKKLbmc+ybGNHdvZElq50H7Z9RjWVgas="
   },
   {
-    "device_id": "sim-device-0010",
-    "machine_id": "MACH_0010",
-    "device_key": "B8kTgUPyxWXhaCjPASPpNWEzLvJSEwocZOnsJxcl6L0="
+    "device_id": "iotdev-0010",
+    "machine_id": "MC-0010",
+    "device_key": "GHxdgf26ZPs1LtwvRy1Xz+i8Jai5GLP8dDT2mpCuvZY="
   },
   {
-    "device_id": "sim-device-0011",
-    "machine_id": "MACH_0011",
-    "device_key": "bg/Cgnf1ggg9PIBSh4q2R/wD1RPtAUDvha/xFZ6mags="
+    "device_id": "iotdev-0011",
+    "machine_id": "MC-0011",
+    "device_key": "nv3K0Nsl9qyfZpDoLZXQ1faeuAa0j6pCNwPIcziPnfM="
   },
   {
-    "device_id": "sim-device-0012",
-    "machine_id": "MACH_0012",
-    "device_key": "38p+jjGoGNq0eUnK36Txa5pGzKFDn4NVtev+hCeMRSU="
+    "device_id": "iotdev-0012",
+    "machine_id": "MC-0012",
+    "device_key": "VDokE+VbIL49uZUMUqo+8u45rz3vOM3CP3Ka8SqeIMo="
   },
   {
-    "device_id": "sim-device-0013",
-    "machine_id": "MACH_0013",
-    "device_key": "xiiIKWQ+x+W2qm1saPDIFgl04GMHKtuLx5JIp094G8k="
+    "device_id": "iotdev-0013",
+    "machine_id": "MC-0013",
+    "device_key": "QhvuogVLU9LrxeeOEtEW5yNBzoWdV1zEMHG9331Ketc="
   },
   {
-    "device_id": "sim-device-0014",
-    "machine_id": "MACH_0014",
-    "device_key": "xTLTaytnWkef5gy/I6Aj6I6cMwtOsGZ0h/zMkub7Cs0="
+    "device_id": "iotdev-0014",
+    "machine_id": "MC-0014",
+    "device_key": "wOQExb8u4f2eZEpc38xIS8N0rF5o6cntrc9kn006628="
   },
   {
-    "device_id": "sim-device-0015",
-    "machine_id": "MACH_0015",
-    "device_key": "Pf6CsbK5Fg1e9TormV+CUmY/h8DYZDw4w78K39ZAdNU="
+    "device_id": "iotdev-0015",
+    "machine_id": "MC-0015",
+    "device_key": "BZMNKU3le6epKXJaMm40kWPr+MOgm+oIiwiOyTukV+Y="
   },
   {
-    "device_id": "sim-device-0016",
-    "machine_id": "MACH_0016",
-    "device_key": "92qD28Vq3uWZBc/GUhQQvqbJVMBGyRA1y0pagUVnlFk="
+    "device_id": "iotdev-0016",
+    "machine_id": "MC-0016",
+    "device_key": "xoFaFJ5oTbdQxQl+m1WMa38NooX5jHse7p5OXfRz/OU="
   },
   {
-    "device_id": "sim-device-0017",
-    "machine_id": "MACH_0017",
-    "device_key": "GLWlMAAfx1sXSuWKyAaFWRn6Pa0Tr2q+ScYYzH/Do8g="
+    "device_id": "iotdev-0017",
+    "machine_id": "MC-0017",
+    "device_key": "WcVhwyXcC2C9wpJ0Luybr1adOorjNw0pmX3Fy6CdkUc="
   },
   {
-    "device_id": "sim-device-0018",
-    "machine_id": "MACH_0018",
-    "device_key": "lndGff0Jqg8cQtLEYyeLmvXy2J6qLDxu5ylsz5KNCLY="
+    "device_id": "iotdev-0018",
+    "machine_id": "MC-0018",
+    "device_key": "cQwz78Wlrm/owqeNvxhVhuhPgf1qahoXQC9k6VMQOS0="
   },
   {
-    "device_id": "sim-device-0019",
-    "machine_id": "MACH_0019",
-    "device_key": "oPqgQS+yPd7sjtrv3ldpP2Nxu4Z4Z5VsUBaoY1erGz4="
+    "device_id": "iotdev-0019",
+    "machine_id": "MC-0019",
+    "device_key": "1SlH5/DsIMMYqKXRAwEZSn955rdIjs2HeqOFf/oajTI="
   },
   {
-    "device_id": "sim-device-0020",
-    "machine_id": "MACH_0020",
-    "device_key": "rnNor20OkBeatdTiZC9JTqONt/n5cnEPUnqRg9bukfA="
+    "device_id": "iotdev-0020",
+    "machine_id": "MC-0020",
+    "device_key": "HO76eYIPHytaaGGdRuL3vvITtjrnB9hzAtIkO1tMBEM="
+  },
+  {
+    "device_id": "iotdev-0021",
+    "machine_id": "MC-0021",
+    "device_key": "R7EtrsaZy2XSxx0FiBwzAm5y61wIYr5CLemmatz3i88="
+  },
+  {
+    "device_id": "iotdev-0022",
+    "machine_id": "MC-0022",
+    "device_key": "FCzTZtNEfd3Q0veoeOu0xeB11R9fyjvzujF3G3rfZoo="
+  },
+  {
+    "device_id": "iotdev-0023",
+    "machine_id": "MC-0023",
+    "device_key": "xYlSu5zKUejNEei84VL/l9hg0Ljc2Jbwuc2LaJoR3Rc="
+  },
+  {
+    "device_id": "iotdev-0024",
+    "machine_id": "MC-0024",
+    "device_key": "FB+bKowVgvFmt0Hm6CBLocYPpxy/flM9ZLJWSebnFYc="
+  },
+  {
+    "device_id": "iotdev-0025",
+    "machine_id": "MC-0025",
+    "device_key": "29Qvr2tjthX/1aQfob4pXlcOQKrCKwaLYOil+wrLLwE="
+  },
+  {
+    "device_id": "iotdev-0026",
+    "machine_id": "MC-0026",
+    "device_key": "yfX9Mg4VZAkAvOAItBAhDQR5jdRG2kuAY72sJnTMGuA="
+  },
+  {
+    "device_id": "iotdev-0027",
+    "machine_id": "MC-0027",
+    "device_key": "3aEkBZRdFWKjUul3+qiUsaV0T18wuKDjIm5aeb44T4w="
+  },
+  {
+    "device_id": "iotdev-0028",
+    "machine_id": "MC-0028",
+    "device_key": "Ze6usNm5MWjFAKU2r/qloWMC5w+eGJGFMG08V3LEbXo="
+  },
+  {
+    "device_id": "iotdev-0029",
+    "machine_id": "MC-0029",
+    "device_key": "ZAHIT6r39R56t7jRuvIPZ7cBrt6O1Q1CL3tYun5G6yk="
+  },
+  {
+    "device_id": "iotdev-0030",
+    "machine_id": "MC-0030",
+    "device_key": "15nOCC93hDaOnT3Rkj8qj0PV40Tiy0qvlSEeuRTLNgU="
+  },
+  {
+    "device_id": "iotdev-0031",
+    "machine_id": "MC-0031",
+    "device_key": "izYSqcN79N9aQCFoCATH19sUidGNHtegCZNgDxSojIk="
+  },
+  {
+    "device_id": "iotdev-0032",
+    "machine_id": "MC-0032",
+    "device_key": "gSSLlVXAxdaVUKjvadCmast+JwwJJcUPQ4h/TDorTNM="
+  },
+  {
+    "device_id": "iotdev-0033",
+    "machine_id": "MC-0033",
+    "device_key": "FO08EkbH2w4mmHmIqZzCvhzMhf0vvB2yH6DSkrnZK1Y="
+  },
+  {
+    "device_id": "iotdev-0034",
+    "machine_id": "MC-0034",
+    "device_key": "QcHzdK0IIHwAn310jzfeETI/Ihws0h/gVey9FlZCuwY="
+  },
+  {
+    "device_id": "iotdev-0035",
+    "machine_id": "MC-0035",
+    "device_key": "yPTNj9adT9gebIPIDWrYOnPKvO3qcN61zRpJIrIxapw="
+  },
+  {
+    "device_id": "iotdev-0036",
+    "machine_id": "MC-0036",
+    "device_key": "1uJWzivLUB+MVkmeW0IS0FPfRVBoc6pZpQSGhmyBwTI="
+  },
+  {
+    "device_id": "iotdev-0037",
+    "machine_id": "MC-0037",
+    "device_key": "Knx2DkE8wINsUyhZdsY3mGYHftW6oLlQwjix2NHcBpo="
+  },
+  {
+    "device_id": "iotdev-0038",
+    "machine_id": "MC-0038",
+    "device_key": "EVCYJnXKdNay9cjzmBHmDEMVdquab9HpdwPLXotW9Xk="
+  },
+  {
+    "device_id": "iotdev-0039",
+    "machine_id": "MC-0039",
+    "device_key": "/V1qEj7Vre+aGY96FR4vuOua0b9BHcZUtUu9f6abp7M="
+  },
+  {
+    "device_id": "iotdev-0040",
+    "machine_id": "MC-0040",
+    "device_key": "8z/E9PSlC7nXnxe86D2NY5k+igHblq7kQ7RzYCpSSXI="
+  },
+  {
+    "device_id": "iotdev-0041",
+    "machine_id": "MC-0041",
+    "device_key": "IVOZbOgYvcnjv7KEIv7bHPHS2iTJ66foB+FcIl+5F8o="
+  },
+  {
+    "device_id": "iotdev-0042",
+    "machine_id": "MC-0042",
+    "device_key": "rkXTYE6iJBALtvlrnf5Et2xpkDk3FnLjLiw8Lku8Hjo="
+  },
+  {
+    "device_id": "iotdev-0043",
+    "machine_id": "MC-0043",
+    "device_key": "Rq1I7+Hj3euhS1mxMRcisvaJRPV7h1iDYfRyiKJAlFk="
+  },
+  {
+    "device_id": "iotdev-0044",
+    "machine_id": "MC-0044",
+    "device_key": "Y6jCGsjyOzhnluhiuvhl2CgylbEBjl2R4DAkB7ILPEw="
+  },
+  {
+    "device_id": "iotdev-0045",
+    "machine_id": "MC-0045",
+    "device_key": "78k1UPQmx3FOKJt/Cn9zYEpThKOaQ/oqEbtJ71j+/Ic="
+  },
+  {
+    "device_id": "iotdev-0046",
+    "machine_id": "MC-0046",
+    "device_key": "1dS9RjppZboqy7bxEGrmhaD+0Uv6NTXY9KEXDUs+wb4="
+  },
+  {
+    "device_id": "iotdev-0047",
+    "machine_id": "MC-0047",
+    "device_key": "j6aLABjJb2Tk8ASRL6oc7J6wmz4CjHIVgS+u1HdTrcE="
+  },
+  {
+    "device_id": "iotdev-0048",
+    "machine_id": "MC-0048",
+    "device_key": "xOeG5zwqvgicd2EDTKE2cT/73HRz76JuQxEAOSyHwqE="
+  },
+  {
+    "device_id": "iotdev-0049",
+    "machine_id": "MC-0049",
+    "device_key": "hhgcbGbp7JGx8i54wpMzHB5u40LNjI87FZfgHMY1fzY="
+  },
+  {
+    "device_id": "iotdev-0050",
+    "machine_id": "MC-0050",
+    "device_key": "+eEb220eeLKATQhbA+dyvN/85NUcfN1MerHVVeqOIIg="
+  },
+  {
+    "device_id": "iotdev-0051",
+    "machine_id": "MC-0051",
+    "device_key": "q6kCFf5BjjAWMrgJwKMpZq0Yqwz4W9NXL+Rei876oWU="
+  },
+  {
+    "device_id": "iotdev-0052",
+    "machine_id": "MC-0052",
+    "device_key": "xUsDKkL10rHjhSsvP89H0XnmHV+aLnT4mbhKBgFPvSE="
+  },
+  {
+    "device_id": "iotdev-0053",
+    "machine_id": "MC-0053",
+    "device_key": "67hfs+0aK6lwuSKtBCKcFU7gv1YqOt65wIjp0lu6/Lg="
+  },
+  {
+    "device_id": "iotdev-0054",
+    "machine_id": "MC-0054",
+    "device_key": "NJH82ob0WkGlWNJv53R8Lb7LihdTmPuiRw8JBOFEOZk="
+  },
+  {
+    "device_id": "iotdev-0055",
+    "machine_id": "MC-0055",
+    "device_key": "L91kGmMCGTPGhuJnmVWu18D1nALQMyjMgx3hpX3+Zow="
+  },
+  {
+    "device_id": "iotdev-0056",
+    "machine_id": "MC-0056",
+    "device_key": "y5GdYjHeGg5QOUjNJVnxLmHTotAXmhQ2Svk9ntzQ9oI="
+  },
+  {
+    "device_id": "iotdev-0057",
+    "machine_id": "MC-0057",
+    "device_key": "waCAqFewmomLtx0AIoscKW1uIt58bLdziFU+c1XL4Sg="
+  },
+  {
+    "device_id": "iotdev-0058",
+    "machine_id": "MC-0058",
+    "device_key": "mgj6vE95V10C+qwDQ5KinLvkcXf3IUrezLG+DNNrR00="
+  },
+  {
+    "device_id": "iotdev-0059",
+    "machine_id": "MC-0059",
+    "device_key": "OSQZ759yndzHGckxRxp6oMCoafaG6PtSVRtTVJg58ls="
+  },
+  {
+    "device_id": "iotdev-0060",
+    "machine_id": "MC-0060",
+    "device_key": "J/eA/AkunwoikZJ5/dEzJYJJx98zG+YMwD+qDX0tNYY="
+  },
+  {
+    "device_id": "iotdev-0061",
+    "machine_id": "MC-0061",
+    "device_key": "WWZXuZUEhHJTqLGKDBDXpuMRMCl6WFZNESpSGX8Etv0="
+  },
+  {
+    "device_id": "iotdev-0062",
+    "machine_id": "MC-0062",
+    "device_key": "MPYWcp0do1D9rtaBUahO7Q3KZfVdY8/mASTKhDCf8pA="
+  },
+  {
+    "device_id": "iotdev-0063",
+    "machine_id": "MC-0063",
+    "device_key": "7nRqhC2qwpuOQRaxUltT6p6QGAN87Cr9/wuiqIlVFwc="
+  },
+  {
+    "device_id": "iotdev-0064",
+    "machine_id": "MC-0064",
+    "device_key": "9JD2tz8wuD/cJYXYogO3OrDww2ZF7MYdZmPQkJ+VP58="
+  },
+  {
+    "device_id": "iotdev-0065",
+    "machine_id": "MC-0065",
+    "device_key": "pt61fUCFHrLotnwOyz4gr+FpVS1UAoBvvW6jyZiSQGk="
+  },
+  {
+    "device_id": "iotdev-0066",
+    "machine_id": "MC-0066",
+    "device_key": "yEjaYCYI9lW0rWIfj+OnmH7x6wKvFGZvP6I0Yvp/Hpo="
+  },
+  {
+    "device_id": "iotdev-0067",
+    "machine_id": "MC-0067",
+    "device_key": "yzfzGRweWaor0okW3VlRDelSSYYdRov5aAv8+FpMEwo="
+  },
+  {
+    "device_id": "iotdev-0068",
+    "machine_id": "MC-0068",
+    "device_key": "qxN9/WtQqfV2sET18/62ZCkf9Tvpa99y4GnrTws9yD0="
+  },
+  {
+    "device_id": "iotdev-0069",
+    "machine_id": "MC-0069",
+    "device_key": "hzzgY9Qs0kc7BtUb0PxVAhGa8i86/IzW6hsIDHRvndg="
+  },
+  {
+    "device_id": "iotdev-0070",
+    "machine_id": "MC-0070",
+    "device_key": "ULb+jzB7v81qcrEs4r7y3iKN1blt9rFackn6FPF10FA="
+  },
+  {
+    "device_id": "iotdev-0071",
+    "machine_id": "MC-0071",
+    "device_key": "qiaftkqCGBOTaMFOPxv1n/2wsBLDQtp5rNgZay14WQY="
+  },
+  {
+    "device_id": "iotdev-0072",
+    "machine_id": "MC-0072",
+    "device_key": "DAbrmCBaYLLq3FNOn1BInmACS5kQAd7DicDbXO8MIRs="
+  },
+  {
+    "device_id": "iotdev-0073",
+    "machine_id": "MC-0073",
+    "device_key": "6SuoaoNvr8zmewKDnUGAgmre039HOtn8X4YDQB4HW1U="
+  },
+  {
+    "device_id": "iotdev-0074",
+    "machine_id": "MC-0074",
+    "device_key": "Hr+DedGiO3IKI52yy2cPVJ+fJ38YwLZL8BqM1MacgYg="
+  },
+  {
+    "device_id": "iotdev-0075",
+    "machine_id": "MC-0075",
+    "device_key": "taDLt8YZbQ9QkRp6qheArsdOutk2jK/m6eIWUmQNfM4="
+  },
+  {
+    "device_id": "iotdev-0076",
+    "machine_id": "MC-0076",
+    "device_key": "Vw+EATfgqWcrC8j4ZEvZsknF7tLZAqfm3bhhA2iMYfs="
+  },
+  {
+    "device_id": "iotdev-0077",
+    "machine_id": "MC-0077",
+    "device_key": "HFj3ATeXzQx8BYBE9bPftA1a32Tg/0fxIGg3oJH1g10="
+  },
+  {
+    "device_id": "iotdev-0078",
+    "machine_id": "MC-0078",
+    "device_key": "/KV/2SXgxzPNq3ASVpqR4j+IMChgm/VEkPlYIrL2cdQ="
+  },
+  {
+    "device_id": "iotdev-0079",
+    "machine_id": "MC-0079",
+    "device_key": "jPx/tPEavb+FcDNCD7eRMFvaC033EUlQHgbmdmzHiRE="
+  },
+  {
+    "device_id": "iotdev-0080",
+    "machine_id": "MC-0080",
+    "device_key": "nuYQQZi2Y3IsfDfcEDckxoz5kwgT5wAUF5SksIPnVvI="
+  },
+  {
+    "device_id": "iotdev-0081",
+    "machine_id": "MC-0081",
+    "device_key": "57GkCrok1swnARwNEZITPvgA8CIjhyGRtTJCYTgFnxo="
+  },
+  {
+    "device_id": "iotdev-0082",
+    "machine_id": "MC-0082",
+    "device_key": "8kFiC9pNWdQcIoDHQfF3wFguqgRmpFyEVLr9WARNk0o="
+  },
+  {
+    "device_id": "iotdev-0083",
+    "machine_id": "MC-0083",
+    "device_key": "3FNeINDwFUfB4fSJTOYIJVlZZuijRwlR6nPigDrRmbA="
+  },
+  {
+    "device_id": "iotdev-0084",
+    "machine_id": "MC-0084",
+    "device_key": "3PFdQtYXo+iZlOBS5DCEOuhDOTB0oGLuOyUWETah+54="
+  },
+  {
+    "device_id": "iotdev-0085",
+    "machine_id": "MC-0085",
+    "device_key": "8bzalbLH+1saK7z810/k+7uqP5e3xSdQN4sQSGZaUqw="
+  },
+  {
+    "device_id": "iotdev-0086",
+    "machine_id": "MC-0086",
+    "device_key": "P0608ojCafV0Fklc67zw6DhTkowIwuGPQjUiQDZ0O+c="
+  },
+  {
+    "device_id": "iotdev-0087",
+    "machine_id": "MC-0087",
+    "device_key": "EE7HpKteDd+SBRRbMzWOckQjE50NWw7Nbr7eEd0E53I="
+  },
+  {
+    "device_id": "iotdev-0088",
+    "machine_id": "MC-0088",
+    "device_key": "drBtZgSvpdG1QHD1t5GZR8QGfKwEQyrSusjtcDq84+s="
+  },
+  {
+    "device_id": "iotdev-0089",
+    "machine_id": "MC-0089",
+    "device_key": "J9h6v5RxUOKrp7+Lau3Apt+XaWque2iU1Yc0Z9/X0q0="
+  },
+  {
+    "device_id": "iotdev-0090",
+    "machine_id": "MC-0090",
+    "device_key": "/t9Ngd68T/4N4a9Qv37D7Aum8flqnE5Qgp/2bNROz14="
+  },
+  {
+    "device_id": "iotdev-0091",
+    "machine_id": "MC-0091",
+    "device_key": "sfRIz9+IVgcp/6H7NoyxHlwtjlBmFuQKk14fYqcDGaE="
+  },
+  {
+    "device_id": "iotdev-0092",
+    "machine_id": "MC-0092",
+    "device_key": "ny+MWeAjFHd+xqrhh7PwV84Vb+HGTDU1pFESMxzn0wA="
+  },
+  {
+    "device_id": "iotdev-0093",
+    "machine_id": "MC-0093",
+    "device_key": "0P1/SW/tkdcXsjSKcKs0uU+593hxDFNErrcaq5Qqw1o="
+  },
+  {
+    "device_id": "iotdev-0094",
+    "machine_id": "MC-0094",
+    "device_key": "NKfp9+rSjW7udaIJYECCtQzWJnWAKGExW9pdOsEt6vI="
+  },
+  {
+    "device_id": "iotdev-0095",
+    "machine_id": "MC-0095",
+    "device_key": "oYeouRlTOeXK/6ug0jVORdIIU+nfOOpKDd3e3gxO4cw="
+  },
+  {
+    "device_id": "iotdev-0096",
+    "machine_id": "MC-0096",
+    "device_key": "Ci8Kva6rMes15uNGM0UDsW+5Msrkhp/RkHoAXAkKDQ8="
+  },
+  {
+    "device_id": "iotdev-0097",
+    "machine_id": "MC-0097",
+    "device_key": "hfg+XHWMYffFWdm8I75rZ72T27sHgrew4g4Ica8aKUM="
+  },
+  {
+    "device_id": "iotdev-0098",
+    "machine_id": "MC-0098",
+    "device_key": "QBuN4pohrMyqHFt7NeQ7mebpT4oxPkiy+jtITsjPyd0="
+  },
+  {
+    "device_id": "iotdev-0099",
+    "machine_id": "MC-0099",
+    "device_key": "1ZVYmCae7/OsoNFDrMyrDDGcD5gUx6A7FYjkw3CNG0Y="
+  },
+  {
+    "device_id": "iotdev-0100",
+    "machine_id": "MC-0100",
+    "device_key": "JTn+RJdWjfdwkaNze64NuaJAMvmi61/jyh5HyTn7EcI="
   }
 ]

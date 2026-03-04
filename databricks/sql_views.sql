@@ -85,9 +85,9 @@ CREATE OR REPLACE VIEW dim_machine AS
 SELECT DISTINCT
   machine_id,
   CASE
-    WHEN machine_id = 'MACH_A' THEN 'Packaging Line A'
-    WHEN machine_id RLIKE '^MACH_[0-9]+$'
-      THEN CONCAT('Virtual Line ', regexp_extract(machine_id, '^MACH_([0-9]+)$', 1))
+    WHEN machine_id = 'MC-0000' THEN 'Physical Line 0000'
+    WHEN machine_id RLIKE '^MC-[0-9]+$'
+      THEN CONCAT('Virtual Line ', regexp_extract(machine_id, '^MC-([0-9]+)$', 1))
     ELSE 'Unknown Line'
   END AS line_name
 FROM silver_machine_telemetry;
@@ -134,10 +134,15 @@ SELECT
   h.fault_scored_at,
   h.last_ml_score_time,
   CAST(unix_timestamp(current_timestamp()) - unix_timestamp(t.event_time) AS INT) AS telemetry_lag_seconds,
+  CAST((unix_timestamp(current_timestamp()) - unix_timestamp(t.event_time)) * 1000 AS BIGINT) AS telemetry_lag_ms,
   CAST(
     unix_timestamp(current_timestamp()) - unix_timestamp(COALESCE(h.last_ml_score_time, t.event_time))
     AS INT
-  ) AS ml_lag_seconds
+  ) AS ml_lag_seconds,
+  CAST(
+    (unix_timestamp(current_timestamp()) - unix_timestamp(COALESCE(h.last_ml_score_time, t.event_time))) * 1000
+    AS BIGINT
+  ) AS ml_lag_ms
 FROM latest_telemetry t
 LEFT JOIN latest_health h
   ON t.machine_id = h.machine_id;

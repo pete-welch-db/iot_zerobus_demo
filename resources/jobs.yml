@@ -37,7 +37,9 @@ resources:
               - --starting-offsets
               - ${var.iothub_bridge_starting_offsets}
               - --run-mode
-              - available-now
+              - ${var.iothub_bridge_run_mode}
+              - --processing-time
+              - ${var.iothub_bridge_processing_time}
           environment_key: zerobus
       environments:
         - environment_key: zerobus
@@ -63,7 +65,7 @@ resources:
       queue:
         enabled: true
       schedule:
-        quartz_cron_expression: "0 */5 * * * ?"
+        quartz_cron_expression: "${var.ml_scoring_schedule_cron}"
         timezone_id: "UTC"
         pause_status: UNPAUSED
       tasks:
@@ -226,9 +228,11 @@ resources:
               - --checkpoint-path
               - ${var.iothub_bridge_checkpoint_path}
               - --starting-offsets
-              - ${var.iothub_bridge_starting_offsets}
+              - ${var.iothub_bridge_backfill_starting_offsets}
               - --run-mode
-              - available-now
+              - ${var.iothub_bridge_backfill_run_mode}
+              - --processing-time
+              - ${var.iothub_bridge_processing_time}
           environment_key: zerobus
 
         - task_key: update_medallion_pipeline
@@ -342,3 +346,97 @@ resources:
               - scikit-learn
               - databricks-sdk
               - requests
+
+    iot_lakebase_oltp_mirror:
+      name: iot_lakebase_oltp_mirror_${bundle.target}
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+      schedule:
+        quartz_cron_expression: "${var.oltp_mirror_schedule_cron}"
+        timezone_id: "UTC"
+        pause_status: UNPAUSED
+      tasks:
+        - task_key: mirror_current_status_to_lakebase
+          spark_python_task:
+            python_file: ../databricks/lakebase_oltp_mirror.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+              - --jdbc-url
+              - ${var.lakebase_jdbc_url}
+              - --db-host
+              - ${var.lakebase_db_host}
+              - --db-port
+              - ${var.lakebase_db_port}
+              - --db-name
+              - ${var.lakebase_db_name}
+              - --secret-scope
+              - ${var.lakebase_secret_scope}
+              - --user-secret-key
+              - ${var.lakebase_user_secret_key}
+              - --password-secret-key
+              - ${var.lakebase_password_secret_key}
+              - --instance-id
+              - ${var.lakebase_instance_id}
+          environment_key: default
+        - task_key: validate_lakebase_parity
+          depends_on:
+            - task_key: mirror_current_status_to_lakebase
+          spark_python_task:
+            python_file: ../databricks/lakebase_parity_validation.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+              - --jdbc-url
+              - ${var.lakebase_jdbc_url}
+              - --secret-scope
+              - ${var.lakebase_secret_scope}
+              - --user-secret-key
+              - ${var.lakebase_user_secret_key}
+              - --password-secret-key
+              - ${var.lakebase_password_secret_key}
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - psycopg2-binary
+
+    # Slack alerting feature disabled. Archived implementation under z_archive/slack/.
+    # iot_nonrun_slack_alerts:
+    #   name: iot_nonrun_slack_alerts_${bundle.target}
+    #   max_concurrent_runs: 1
+    #   queue:
+    #     enabled: true
+    #   schedule:
+    #     quartz_cron_expression: "${var.slack_alert_schedule_cron}"
+    #     timezone_id: "UTC"
+    #     pause_status: UNPAUSED
+    #   tasks:
+    #     - task_key: evaluate_and_send_slack_alerts
+    #       spark_python_task:
+    #         python_file: ../databricks/alert_nonrun_to_slack.py
+    #         parameters:
+    #           - --catalog
+    #           - ${var.catalog}
+    #           - --schema
+    #           - ${var.schema}
+    #           - --secret-scope
+    #           - ${var.zerobus_secret_scope}
+    #           - --webhook-secret-key
+    #           - ${var.slack_webhook_secret_key}
+    #           - --alert-email
+    #           - ${var.slack_alert_email}
+    #       environment_key: default
+    #   environments:
+    #     - environment_key: default
+    #       spec:
+    #         environment_version: "2"
+    #         dependencies:
+    #           - requests

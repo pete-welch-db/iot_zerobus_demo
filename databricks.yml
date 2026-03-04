@@ -60,6 +60,80 @@ variables:
   iothub_bridge_starting_offsets:
     description: Kafka/Event Hubs starting offsets mode for IoT Hub bridge (latest for live demo, earliest for backfill)
     default: latest
+  iothub_bridge_run_mode:
+    description: Bridge streaming run mode (continuous for demo/prod, available-now for backfill)
+    default: continuous
+  iothub_bridge_processing_time:
+    description: Processing trigger interval for continuous IoT Hub bridge micro-batches
+    default: "5 seconds"
+  iothub_bridge_backfill_run_mode:
+    description: Explicit one-shot bridge mode for workflow backfill/sweep path
+    default: available-now
+  iothub_bridge_backfill_starting_offsets:
+    description: Starting offsets for explicit backfill sweep path
+    default: latest
+  dashboard_mode:
+    description: Dashboard cadence mode (demo or steady)
+    default: demo
+  dashboard_refresh_seconds_demo:
+    description: AI/BI schedule interval in seconds for demo mode
+    default: "60"
+  dashboard_refresh_seconds_steady:
+    description: AI/BI schedule interval in seconds for steady-state mode
+    default: "300"
+  ml_scoring_schedule_demo:
+    description: Quartz cron for ML scoring in demo mode
+    default: "0 0/1 * * * ?"
+  ml_scoring_schedule_steady:
+    description: Quartz cron for ML scoring in steady-state mode
+    default: "0 0/5 * * * ?"
+  ml_scoring_schedule_cron:
+    description: Effective Quartz cron used by ML scoring job
+    default: "0 0/1 * * * ?"
+  oltp_mirror_schedule_cron:
+    description: Quartz cron used by Lakebase OLTP mirror job
+    default: "0 0/1 * * * ?"
+  # Slack feature disabled.
+  # slack_alert_schedule_cron:
+  #   description: Quartz cron used by non-run Slack alerting job
+  #   default: "0 0/1 * * * ?"
+  lakebase_project_id:
+    description: Autoscaling Lakebase project identifier
+    default: iot-demo-lakebase
+  lakebase_resource_name:
+    description: Friendly autoscaling Lakebase resource name
+    default: iot-demo-lakebase
+  lakebase_db_host:
+    description: Lakebase endpoint host captured by provisioning
+    default: ""
+  lakebase_db_port:
+    description: Lakebase database port
+    default: "5432"
+  lakebase_db_name:
+    description: Lakebase logical database used for OLTP mirror
+    default: iot_demo
+  lakebase_secret_scope:
+    description: Secret scope containing Lakebase DB credentials
+    default: iot_zerobus_demo
+  lakebase_user_secret_key:
+    description: Secret key name for Lakebase DB username
+    default: lakebase_db_user
+  lakebase_password_secret_key:
+    description: Secret key name for Lakebase DB password
+    default: lakebase_db_password
+  lakebase_instance_id:
+    description: Lakebase instance identifier (captured during provisioning)
+    default: ""
+  lakebase_jdbc_url:
+    description: JDBC URL for Lakebase OLTP mirror job
+    default: ""
+  # Slack feature disabled.
+  # slack_webhook_secret_key:
+  #   description: Secret key for Slack webhook URL
+  #   default: slack_webhook_url
+  # slack_alert_email:
+  #   description: Primary email mentioned in alerts
+  #   default: pete.welch@databricks.com
   zerobus_run_smoke_ingest:
     description: Whether zerobus setup job writes a single test record
     default: "false"

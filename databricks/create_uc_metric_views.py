@@ -173,6 +173,14 @@ def main() -> None:
               expr: MAX(telemetry_lag_seconds)
             - name: Max ML Lag Seconds
               expr: MAX(ml_lag_seconds)
+            - name: Avg Telemetry Lag Ms
+              expr: AVG(telemetry_lag_ms)
+            - name: Avg ML Lag Ms
+              expr: AVG(ml_lag_ms)
+            - name: Max Telemetry Lag Ms
+              expr: MAX(telemetry_lag_ms)
+            - name: Max ML Lag Ms
+              expr: MAX(ml_lag_ms)
         $$
         """
     )

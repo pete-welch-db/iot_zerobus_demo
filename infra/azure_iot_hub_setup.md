@@ -22,7 +22,7 @@ Arduino (serial) -> Mac Python sender -> Azure IoT Hub -> built-in Event Hubs-co
 
 1. In IoT Hub, navigate to `Devices`.
 2. Create device:
-   - Device ID: `arduino-panel`
+   - Device ID: `iotdev-0000`
    - Authentication type: symmetric key.
 3. Copy primary key (used to generate SAS token for edge sender).
 
@@ -56,7 +56,7 @@ Both paths publish to IoT Hub over MQTT with device SAS authentication.
 Resource URI format for a device:
 
 ```text
-iothub-zerobus-demo-welch.azure-devices.net/devices/arduino-panel
+iothub-zerobus-demo-welch.azure-devices.net/devices/iotdev-0000
 ```
 
 Generate token with helper script:
@@ -64,7 +64,7 @@ Generate token with helper script:
 ```bash
 cd edge-python
 python generate_sas_token.py \
-  --resource-uri "iothub-zerobus-demo-welch.azure-devices.net/devices/arduino-panel" \
+  --resource-uri "iothub-zerobus-demo-welch.azure-devices.net/devices/iotdev-0000" \
   --device-key "<device-primary-key>" \
   --ttl-seconds 28800
 ```
@@ -82,10 +82,10 @@ For direct publish from Uno WiFi Rev2, set these in firmware:
 WIFI_SSID=<phone_hotspot_name>
 WIFI_PASSWORD=<phone_hotspot_password>
 IOT_HUB_HOST=iothub-zerobus-demo-welch.azure-devices.net
-DEVICE_ID=arduino-panel
+DEVICE_ID=iotdev-0000
 SAS_TOKEN=SharedAccessSignature sr=...&sig=...&se=...
 MQTT_PORT=8883
-MQTT_TOPIC=devices/arduino-panel/messages/events/
+MQTT_TOPIC=devices/iotdev-0000/messages/events/
 MQTT_USERNAME=<iothub-host>/<device-id>/?api-version=2021-04-12
 ```
 
@@ -99,11 +99,11 @@ Notes:
 
 ```text
 IOT_HUB_NAME=<iothub-name-without-domain>
-DEVICE_ID=arduino-panel
+DEVICE_ID=iotdev-0000
 SAS_TOKEN=<SharedAccessSignature ...>
 SERIAL_PORT=/dev/cu.usbmodem101
 BAUD_RATE=115200
-MACHINE_ID=MACH_A
+MACHINE_ID=MC-0000
 ```
 
 Optional:

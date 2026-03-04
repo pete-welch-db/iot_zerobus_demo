@@ -8,42 +8,60 @@ SCHEMA="${SCHEMA:-iot_demo_dev}"
 
 get_job_id() {
   local resource_key="$1"
-  databricks bundle summary -t "$TARGET" | awk -v key="$resource_key" '
-    $1 == key ":" { in_key = 1; next }
-    in_key && $1 == "URL:" {
-      if (match($2, /jobs\/([0-9]+)/, arr)) {
-        print arr[1]
-        exit
-      }
-    }
-    in_key && NF == 0 { in_key = 0 }
-  '
+  databricks bundle summary -t "$TARGET" -o json | python3 -c '
+import json, re, sys
+resource_key = sys.argv[1]
+data = json.load(sys.stdin)
+job = ((data.get("resources") or {}).get("jobs") or {}).get(resource_key) or {}
+job_id = str(job.get("id") or "")
+if job_id:
+    print(job_id)
+    raise SystemExit(0)
+url = str(job.get("url") or "")
+m = re.search(r"/jobs/(\d+)", url)
+if m:
+    print(m.group(1))
+' "$resource_key"
 }
 
 get_pipeline_id() {
   local resource_key="$1"
-  databricks bundle summary -t "$TARGET" | awk -v key="$resource_key" '
-    $1 == key ":" { in_key = 1; next }
-    in_key && $1 == "URL:" {
-      if (match($2, /pipelines\/([0-9a-f-]+)/, arr)) {
-        print arr[1]
-        exit
-      }
-    }
-    in_key && NF == 0 { in_key = 0 }
-  '
+  databricks bundle summary -t "$TARGET" -o json | python3 -c '
+import json, re, sys
+resource_key = sys.argv[1]
+data = json.load(sys.stdin)
+pipeline = ((data.get("resources") or {}).get("pipelines") or {}).get(resource_key) or {}
+pipeline_id = str(pipeline.get("id") or "")
+if pipeline_id:
+    print(pipeline_id)
+    raise SystemExit(0)
+url = str(pipeline.get("url") or "")
+m = re.search(r"/pipelines/([0-9a-f-]+)", url)
+if m:
+    print(m.group(1))
+' "$resource_key"
 }
 
 job_has_active_run() {
   local job_id="$1"
   databricks jobs list-runs --job-id "$job_id" --active-only --limit 1 --output json 2>/dev/null | \
-    python3 -c 'import json,sys; d=json.load(sys.stdin); print("true" if (d.get("runs") or []) else "false")'
+    python3 -c 'import json,sys; d=json.load(sys.stdin); runs=d if isinstance(d,list) else (d.get("runs") or []); print("true" if runs else "false")'
 }
 
 pipeline_is_running() {
   local pipeline_id="$1"
-  databricks pipelines get --pipeline-id "$pipeline_id" --output json 2>/dev/null | \
-    python3 -c 'import json,sys; d=json.load(sys.stdin); print("true" if d.get("state") == "RUNNING" else "false")'
+  databricks pipelines get "$pipeline_id" --output json 2>/dev/null | \
+    python3 -c 'import json,sys
+raw=sys.stdin.read().strip()
+if not raw:
+    print("false")
+    raise SystemExit(0)
+try:
+    d=json.loads(raw)
+except Exception:
+    print("false")
+    raise SystemExit(0)
+print("true" if isinstance(d,dict) and d.get("state")=="RUNNING" else "false")'
 }
 
 cancel_job_resource() {
@@ -67,7 +85,7 @@ stop_pipeline_resource() {
     return
   fi
   echo "Stopping pipeline $key ($pipeline_id)"
-  databricks pipelines stop --pipeline-id "$pipeline_id" >/dev/null || true
+  databricks pipelines stop "$pipeline_id" >/dev/null || true
 }
 
 sql_query() {

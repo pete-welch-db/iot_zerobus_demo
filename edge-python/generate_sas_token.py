@@ -17,7 +17,7 @@ def generate_sas_token(resource_uri: str, key: str, expiry_epoch: int) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate an Azure IoT Hub device SAS token.")
-    parser.add_argument("--resource-uri", required=True, help="IoT Hub device URI, e.g. myhub.azure-devices.net/devices/arduino-panel")
+    parser.add_argument("--resource-uri", required=True, help="IoT Hub device URI, e.g. myhub.azure-devices.net/devices/iotdev-0000")
     parser.add_argument("--device-key", required=True, help="Base64 encoded device primary/secondary key")
     parser.add_argument("--ttl-seconds", type=int, default=3600, help="Token lifetime in seconds")
     args = parser.parse_args()

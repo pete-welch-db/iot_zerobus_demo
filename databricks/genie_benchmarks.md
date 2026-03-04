@@ -26,9 +26,9 @@ FROM {catalog}.{schema}.vw_machine_current_status;
 ### Telemetry lag by machine
 **Phrasings:** "Which machine has the highest telemetry lag?" / "Show telemetry lag by machine"
 ```sql
-SELECT machine_id, telemetry_lag_seconds, ml_lag_seconds, last_event_time
+SELECT machine_id, telemetry_lag_ms, ml_lag_ms, last_event_time
 FROM {catalog}.{schema}.vw_machine_current_status
-ORDER BY telemetry_lag_seconds DESC;
+ORDER BY telemetry_lag_ms DESC;
 ```
 
 ### Downtime by machine
@@ -48,12 +48,12 @@ FROM {catalog}.{schema}.vw_machine_current_status
 WHERE anomaly_score >= 0.7;
 ```
 
-### Average telemetry lag for MACH_A
-**Phrasings:** "What is the average telemetry lag for MACH_A?" / "How fresh is MACH_A data?"
+### Average telemetry lag for MC-0000
+**Phrasings:** "What is the average telemetry lag for MC-0000?" / "How fresh is MC-0000 data?"
 ```sql
-SELECT machine_id, telemetry_lag_seconds, ml_lag_seconds
+SELECT machine_id, telemetry_lag_ms, ml_lag_ms
 FROM {catalog}.{schema}.vw_machine_current_status
-WHERE machine_id = 'MACH_A';
+WHERE machine_id = 'MC-0000';
 ```
 
 ### Compare OEE across lines

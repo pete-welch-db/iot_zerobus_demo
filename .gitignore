@@ -214,3 +214,5 @@ arduino/arduino_secrets.h
 arduino/secrets.h
 edge-python/devices.json
 synthetic_fault_training.*
+lakebase.env
+z_archive/

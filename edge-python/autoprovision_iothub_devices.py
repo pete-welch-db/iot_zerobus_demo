@@ -113,13 +113,23 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--device-prefix",
-        default="sim-device",
-        help="Device ID prefix (default: sim-device)",
+        default="iotdev",
+        help="Device ID prefix (default: iotdev)",
     )
     parser.add_argument(
         "--machine-prefix",
-        default="MACH",
-        help="Machine ID prefix in manifest (default: MACH)",
+        default="MC",
+        help="Machine ID prefix in manifest (default: MC)",
+    )
+    parser.add_argument(
+        "--device-separator",
+        default="-",
+        help="Separator between device prefix and numeric suffix (default: -)",
+    )
+    parser.add_argument(
+        "--machine-separator",
+        default="-",
+        help="Separator between machine prefix and numeric suffix (default: -)",
     )
     parser.add_argument(
         "--start-index",
@@ -149,8 +159,8 @@ def main() -> None:
     manifest = []
     for i in range(args.start_index, args.start_index + args.count):
         suffix = str(i).zfill(args.padding)
-        device_id = f"{args.device_prefix}-{suffix}"
-        machine_id = f"{args.machine_prefix}_{suffix}"
+        device_id = f"{args.device_prefix}{args.device_separator}{suffix}"
+        machine_id = f"{args.machine_prefix}{args.machine_separator}{suffix}"
 
         ensure_device_identity(args.iothub_name, device_id)
         device_key = get_device_key(args.iothub_name, device_id)

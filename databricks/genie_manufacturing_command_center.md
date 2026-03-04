@@ -36,9 +36,9 @@ Do not include Bronze/raw tables in this Genie scope.
 - Which machine is most likely to fault in the next 5 minutes?
 - Show downtime for each machine in the last 60 minutes.
 - Which machines currently have anomaly score above 0.7?
-- What is the latest OEE for MACH_A?
+- What is the latest OEE for MC-0000?
 - Compare availability, performance, and quality for all machines right now.
-- Show trend of vibration and temperature for the last hour for MACH_A.
+- Show trend of vibration and temperature for the last hour for MC-0000.
 - Which line has the highest average fault risk today?
 
 ## Expected Behavior Checks

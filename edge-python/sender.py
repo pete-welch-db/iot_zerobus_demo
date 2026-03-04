@@ -1,4 +1,5 @@
 import json
+import math
 import logging
 import os
 import ssl
@@ -26,9 +27,9 @@ BAUD_RATE = int(os.getenv("BAUD_RATE", "115200"))
 READ_TIMEOUT_SECONDS = float(os.getenv("SERIAL_TIMEOUT_SECONDS", "2.0"))
 
 IOT_HUB_NAME = os.getenv("IOT_HUB_NAME", "iothub-zerobus-demo-welch")
-DEVICE_ID = os.getenv("DEVICE_ID", "arduino-panel")
+DEVICE_ID = os.getenv("DEVICE_ID", "iotdev-0000")
 SAS_TOKEN = os.getenv("SAS_TOKEN", "")
-MACHINE_ID = os.getenv("MACHINE_ID", "MACH_A")
+MACHINE_ID = os.getenv("MACHINE_ID", "MC-0000")
 
 MQTT_HOST = f"{IOT_HUB_NAME}.azure-devices.net"
 MQTT_PORT = 8883
@@ -69,11 +70,29 @@ def parse_serial_line(line: str) -> Optional[Tuple[float, float, int, str, Optio
 
 def build_payload(parsed: Tuple[float, float, int, str, Optional[str]]) -> str:
     vibration, temp_c, throughput, state, fault_code = parsed
+    rpm = int(max(0, min(3000, throughput * 25)))
+    current_amps = round(max(0.5, min(15.0, 2.0 + (throughput / 120.0) * 11.0)), 3)
+    humidity_pct = round(max(30.0, min(85.0, 30.0 + ((temp_c - 30.0) * 0.7))), 1)
+    load_pct = round(max(0.0, min(100.0, (throughput / 120.0) * 100.0)), 2)
+    voltage_v = 230.0
+    power_factor = 0.92
+    power_kw = round((voltage_v * current_amps * power_factor * math.sqrt(3)) / 1000.0, 3)
+    pressure_bar = round(max(1.0, 2.5 + load_pct / 45.0), 3)
+    flow_rate_lpm = round(max(5.0, 40.0 + throughput * 0.95), 2)
     payload = {
         "machine_id": MACHINE_ID,
         "vibration_mm_s": vibration,
         "temp_c": temp_c,
         "throughput_cpm": throughput,
+        "rpm": rpm,
+        "current_amps": current_amps,
+        "humidity_pct": humidity_pct,
+        "load_pct": load_pct,
+        "power_kw": power_kw,
+        "power_factor": power_factor,
+        "voltage_v": voltage_v,
+        "pressure_bar": pressure_bar,
+        "flow_rate_lpm": flow_rate_lpm,
         "state": state,
         "fault_code": fault_code,
         # Databricks parses this when present; otherwise IoT Hub enqueue time is used downstream.

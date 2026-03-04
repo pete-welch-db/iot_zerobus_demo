@@ -24,7 +24,7 @@ Arduino WiFi board -> USB serial on Mac -> Python sender -> Azure IoT Hub (built
 
 ```json
 {
-  "machine_id": "MACH_A",
+  "machine_id": "MC-0000",
   "vibration_mm_s": 4.2,
   "temp_c": 57.5,
   "throughput_cpm": 82,

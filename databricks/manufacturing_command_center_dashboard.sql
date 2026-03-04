@@ -74,22 +74,22 @@ SELECT
   avg(quality_pct) AS fleet_quality_pct,
   sum(CASE WHEN anomaly_score >= 0.7 THEN 1 ELSE 0 END) AS active_anomaly_machines,
   sum(CASE WHEN prob_fault_next_5m >= 0.5 THEN 1 ELSE 0 END) AS high_risk_machines,
-  avg(telemetry_lag_seconds) AS avg_telemetry_lag_seconds,
-  avg(ml_lag_seconds) AS avg_ml_lag_seconds
+  avg(telemetry_lag_ms) AS avg_telemetry_lag_ms,
+  avg(ml_lag_ms) AS avg_ml_lag_ms
 FROM vw_machine_current_status;
 
 -- 12) ML/telemetry freshness monitor
 SELECT
   machine_id, last_event_time, last_ml_score_time,
-  telemetry_lag_seconds, ml_lag_seconds,
+  telemetry_lag_ms, ml_lag_ms,
   anomaly_inference_type, fault_inference_type
 FROM vw_machine_current_status
-ORDER BY ml_lag_seconds DESC, telemetry_lag_seconds DESC;
+ORDER BY ml_lag_ms DESC, telemetry_lag_ms DESC;
 
 -- 13) Device health + latency table (bottom widget)
 SELECT
   s.machine_id, d.line_name, s.state, s.last_event_time,
-  s.telemetry_lag_seconds, s.ml_lag_seconds,
+  s.telemetry_lag_ms, s.ml_lag_ms,
   s.temp_c, s.vibration_mm_s, s.throughput_cpm,
   s.rpm, s.current_amps, s.humidity_pct,
   s.load_pct, s.power_kw, s.power_factor, s.voltage_v, s.pressure_bar, s.flow_rate_lpm,
@@ -101,4 +101,4 @@ SELECT
   END AS fault_band
 FROM vw_machine_current_status s
 LEFT JOIN dim_machine d ON s.machine_id = d.machine_id
-ORDER BY s.telemetry_lag_seconds ASC, s.ml_lag_seconds ASC, s.last_event_time DESC;
+ORDER BY s.telemetry_lag_ms ASC, s.ml_lag_ms ASC, s.last_event_time DESC;

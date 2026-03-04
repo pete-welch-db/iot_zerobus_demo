@@ -43,6 +43,11 @@ def parse_args() -> argparse.Namespace:
         default="continuous",
         help="Streaming runtime mode. Use available-now for one-shot backfill/sweeps.",
     )
+    parser.add_argument(
+        "--processing-time",
+        default="5 seconds",
+        help="Processing trigger interval for continuous mode (default: 5 seconds).",
+    )
     return parser.parse_args()
 
 
@@ -247,8 +252,8 @@ def main() -> None:
         LOGGER.info("Starting bridge in available-now mode (one-shot sweep).")
         query = query_builder.trigger(availableNow=True).start()
     else:
-        LOGGER.info("Starting bridge in continuous mode.")
-        query = query_builder.start()
+        LOGGER.info("Starting bridge in continuous mode with processing time %s.", args.processing_time)
+        query = query_builder.trigger(processingTime=args.processing_time).start()
     query.awaitTermination()
     LOGGER.info("IoT Hub -> Zerobus bridge run completed or terminated.")
 

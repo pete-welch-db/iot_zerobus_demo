@@ -140,11 +140,11 @@ def main() -> None:
         "How much downtime has each line had today?",
         "Which machines currently have anomaly score above 0.7?",
         "Show anomalies across all lines",
-        "What is the latest OEE for MACH_A?",
+        "What is the latest OEE for MC-0000?",
         "Show overall equipment effectiveness for all machines",
         "How efficient are the machines?",
         "Compare availability, performance, and quality for all machines right now.",
-        "Show trend of vibration and temperature for the last hour for MACH_A.",
+        "Show trend of vibration and temperature for the last hour for MC-0000.",
         "Show RPM and motor current trends for the last hour",
         "Which line has the highest average fault risk today?",
         "Which machine has the highest ML lag right now?",
@@ -166,8 +166,8 @@ KPI Definitions (use these exact formulas):
 - Downtime = time_in_stopped_s + time_in_fault_s (in seconds within each 5-minute window).
 - Anomaly Score = anomaly_score from ML model output, threshold >= 0.7 indicates anomaly unless user specifies otherwise.
 - Fault Risk = prob_fault_next_5m, the probability a machine will enter FAULT state within the next 5 minutes. Values above 0.5 are high risk, above 0.8 are critical.
-- Telemetry Freshness = telemetry_lag_seconds, the time since the last telemetry reading was received.
-- ML Freshness = ml_lag_seconds, the time since the last ML scoring run completed.
+- Telemetry Freshness = telemetry_lag_ms, the time since the last telemetry reading was received (milliseconds).
+- ML Freshness = ml_lag_ms, the time since the last ML scoring run completed (milliseconds).
 
 Telemetry fields:
 - vibration_mm_s: vibration in mm/s (normal < 8, warning 8-9.5, fault >= 9.5)
@@ -200,7 +200,7 @@ Instructions you must follow when providing summaries:
     example_sql_queries = [
         {
             "question": "Which machine is most likely to fault in the next 5 minutes?",
-            "sql": f"""SELECT s.machine_id, d.line_name, s.prob_fault_next_5m, s.anomaly_score, s.state, s.telemetry_lag_seconds
+            "sql": f"""SELECT s.machine_id, d.line_name, s.prob_fault_next_5m, s.anomaly_score, s.state, s.telemetry_lag_ms
 FROM {catalog}.{schema}.vw_machine_current_status s
 LEFT JOIN {catalog}.{schema}.dim_machine d ON s.machine_id = d.machine_id
 ORDER BY s.prob_fault_next_5m DESC
@@ -237,7 +237,7 @@ ORDER BY s.oee_pct ASC""",
   ROUND(current_amps, 2) AS current_amps,
   rpm, state
 FROM {catalog}.{schema}.vw_machine_telemetry_live
-WHERE machine_id = 'MACH_A'
+WHERE machine_id = 'MC-0000'
 ORDER BY event_time DESC
 LIMIT 200""",
         },
@@ -255,11 +255,11 @@ ORDER BY s.anomaly_score DESC""",
         {
             "question": "How fresh is the data?",
             "sql": f"""SELECT machine_id,
-  ROUND(telemetry_lag_seconds, 0) AS telemetry_lag_s,
-  ROUND(ml_lag_seconds, 0) AS ml_lag_s,
+  ROUND(telemetry_lag_ms, 0) AS telemetry_lag_ms,
+  ROUND(ml_lag_ms, 0) AS ml_lag_ms,
   last_event_time, last_ml_score_time
 FROM {catalog}.{schema}.vw_machine_current_status
-ORDER BY telemetry_lag_seconds DESC""",
+ORDER BY telemetry_lag_ms DESC""",
         },
         {
             "question": "Show current status of all machines",

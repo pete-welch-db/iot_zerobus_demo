@@ -34,5 +34,5 @@ Use concise business-language instructions:
 ## Example Prompts
 
 - Which machine is most likely to fault in the next 10 minutes?
-- Show the last hour of downtime and performance loss for MACH_A.
+- Show the last hour of downtime and performance loss for MC-0000.
 - What is the current OEE trend for Packaging Line A?
