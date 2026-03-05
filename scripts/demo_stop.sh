@@ -5,8 +5,6 @@ source "$SCRIPT_DIR/lib.sh"
 
 cancel_job_resource iothub_to_zerobus_autorun
 stop_pipeline_resource iot_telemetry_medallion
-cancel_job_resource iot_pipeline_keepalive
-cancel_job_resource iot_ml_realtime_scoring
-cancel_job_resource iot_demo_realtime_workflow
+cancel_job_resource iot_zerobus_orchestration
 
 echo "stop phase complete."

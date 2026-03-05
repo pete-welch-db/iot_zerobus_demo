@@ -3,12 +3,17 @@ resources:
     iothub_to_zerobus_autorun:
       name: iothub_to_zerobus_autorun_${bundle.target}
       max_concurrent_runs: 1
+      timeout_seconds: 0
       queue:
         enabled: true
       tasks:
         - task_key: bridge_iothub_to_zerobus
+          timeout_seconds: 0
+          max_retries: 5
+          min_retry_interval_millis: 300000
+          retry_on_timeout: true
           spark_python_task:
-            python_file: ../databricks/iothub_to_zerobus_bridge.py
+            python_file: ../databricks/ingestion/iothub_to_zerobus_bridge.py
             parameters:
               - --catalog
               - ${var.catalog}
@@ -40,6 +45,8 @@ resources:
               - ${var.iothub_bridge_run_mode}
               - --processing-time
               - ${var.iothub_bridge_processing_time}
+              - --max-records-per-batch
+              - ${var.iothub_bridge_max_records_per_batch}
           environment_key: zerobus
       environments:
         - environment_key: zerobus
@@ -48,395 +55,122 @@ resources:
             dependencies:
               - databricks-zerobus-ingest-sdk
 
-    iot_pipeline_keepalive:
-      name: iot_pipeline_keepalive_${bundle.target}
-      max_concurrent_runs: 1
+    iot_zerobus_orchestration:
+      name: iot_zerobus_orchestration
+      tasks:
+        - task_key: Apply_Semantic_Views
+          spark_python_task:
+            python_file: ../databricks/semantic/apply_semantic_views.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+              - --telemetry-live-window-hours
+              - ${var.telemetry_live_window_hours}
+          environment_key: Default
+        - task_key: Create_refresh_metric_views
+          depends_on:
+            - task_key: Apply_Semantic_Views
+          spark_python_task:
+            python_file: ../databricks/semantic/create_uc_metric_views.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+          environment_key: Default
+        - task_key: Refresh_Dashboard
+          depends_on:
+            - task_key: Create_refresh_metric_views
+          dashboard_task:
+            subscription: {}
+            warehouse_id: 148ccb90800933a1
+            dashboard_id: 01f11755a5c31ce2ae7e3f1c7a514115
       queue:
         enabled: true
-      tasks:
-        - task_key: ensure_medallion_pipeline_running
-          pipeline_task:
-            pipeline_id: ${resources.pipelines.iot_telemetry_medallion.id}
-            full_refresh: false
-
-    iot_ml_realtime_scoring:
-      name: iot_ml_realtime_scoring_${bundle.target}
-      max_concurrent_runs: 1
-      queue:
-        enabled: true
-      schedule:
-        quartz_cron_expression: "${var.ml_scoring_schedule_cron}"
-        timezone_id: "UTC"
-        pause_status: UNPAUSED
-      tasks:
-        - task_key: anomaly_realtime
-          spark_python_task:
-            python_file: ../databricks/ml_anomaly_notebook.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-              - --mlflow-experiment
-              - ${var.mlflow_experiment}
-              - --inference-mode
-              - both
-              - --train-model
-              - "false"
-              - --batch-lookback-hours
-              - "24"
-              - --realtime-lookback-minutes
-              - "3"
-          environment_key: default
-        - task_key: fault_realtime
-          depends_on:
-            - task_key: anomaly_realtime
-          spark_python_task:
-            python_file: ../databricks/ml_state_prediction_notebook.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-              - --mlflow-experiment
-              - ${var.mlflow_experiment}
-              - --inference-mode
-              - both
-              - --train-model
-              - "false"
-              - --batch-lookback-hours
-              - "24"
-              - --realtime-lookback-minutes
-              - "3"
-          environment_key: default
-        - task_key: refresh_semantic_views
-          depends_on:
-            - task_key: fault_realtime
-          spark_python_task:
-            python_file: ../databricks/apply_semantic_views.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-          environment_key: default
-        - task_key: refresh_metric_views
-          depends_on:
-            - task_key: refresh_semantic_views
-          spark_python_task:
-            python_file: ../databricks/create_uc_metric_views.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-          environment_key: default
       environments:
-        - environment_key: default
+        - environment_key: Default
           spec:
-            environment_version: "2"
-            dependencies:
-              - mlflow
-              - scikit-learn
+            environment_version: "4"
+      performance_target: PERFORMANCE_OPTIMIZED
 
-    iot_demo_realtime_workflow:
-      name: iot_demo_realtime_workflow_${bundle.target}
-      max_concurrent_runs: 1
-      queue:
-        enabled: true
-      tasks:
-        - task_key: preflight_checks
-          spark_python_task:
-            python_file: ../databricks/preflight_checks.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-              - --raw-table
-              - ${var.raw_input_table}
-              - --secret-scope
-              - ${var.zerobus_secret_scope}
-              - --sp-client-id-key
-              - ${var.zerobus_sp_client_id_key}
-              - --sp-client-secret-key
-              - ${var.zerobus_sp_client_secret_key}
-              - --iothub-connection-key
-              - ${var.iothub_eventhubs_connection_secret_key}
-          environment_key: default
-
-        - task_key: setup_zerobus_ingest
-          depends_on:
-            - task_key: preflight_checks
-          spark_python_task:
-            python_file: ../zerobus/setup_ingest.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-              - --table
-              - ${var.raw_input_table}
-              - --workspace-id
-              - ${var.zerobus_workspace_id}
-              - --workspace-url
-              - ${var.zerobus_workspace_url}
-              - --workspace-region
-              - ${var.zerobus_workspace_region}
-              - --ingest-url
-              - ${var.zerobus_ingest_url}
-              - --sp-client-id-secret-scope
-              - ${var.zerobus_secret_scope}
-              - --sp-client-id-secret-key
-              - ${var.zerobus_sp_client_id_key}
-              - --sp-client-secret-secret-scope
-              - ${var.zerobus_secret_scope}
-              - --sp-client-secret-secret-key
-              - ${var.zerobus_sp_client_secret_key}
-              - --run-smoke-ingest
-              - ${var.zerobus_run_smoke_ingest}
-          environment_key: zerobus
-
-        - task_key: bridge_iothub_to_zerobus
-          depends_on:
-            - task_key: setup_zerobus_ingest
-          spark_python_task:
-            python_file: ../databricks/iothub_to_zerobus_bridge.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-              - --table
-              - ${var.raw_input_table}
-              - --workspace-url
-              - ${var.zerobus_workspace_url}
-              - --ingest-url
-              - ${var.zerobus_ingest_url}
-              - --sp-client-id-secret-scope
-              - ${var.zerobus_secret_scope}
-              - --sp-client-id-secret-key
-              - ${var.zerobus_sp_client_id_key}
-              - --sp-client-secret-secret-scope
-              - ${var.zerobus_secret_scope}
-              - --sp-client-secret-secret-key
-              - ${var.zerobus_sp_client_secret_key}
-              - --iothub-connection-secret-scope
-              - ${var.zerobus_secret_scope}
-              - --iothub-connection-secret-key
-              - ${var.iothub_eventhubs_connection_secret_key}
-              - --checkpoint-path
-              - ${var.iothub_bridge_checkpoint_path}
-              - --starting-offsets
-              - ${var.iothub_bridge_backfill_starting_offsets}
-              - --run-mode
-              - ${var.iothub_bridge_backfill_run_mode}
-              - --processing-time
-              - ${var.iothub_bridge_processing_time}
-          environment_key: zerobus
-
-        - task_key: update_medallion_pipeline
-          depends_on:
-            - task_key: bridge_iothub_to_zerobus
-          pipeline_task:
-            pipeline_id: ${resources.pipelines.iot_telemetry_medallion.id}
-            full_refresh: false
-
-        - task_key: anomaly_scoring
-          depends_on:
-            - task_key: update_medallion_pipeline
-          spark_python_task:
-            python_file: ../databricks/ml_anomaly_notebook.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-              - --mlflow-experiment
-              - ${var.mlflow_experiment}
-              - --inference-mode
-              - both
-              - --train-model
-              - "true"
-          environment_key: default
-
-        - task_key: fault_prediction
-          depends_on:
-            - task_key: anomaly_scoring
-          spark_python_task:
-            python_file: ../databricks/ml_state_prediction_notebook.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-              - --mlflow-experiment
-              - ${var.mlflow_experiment}
-              - --inference-mode
-              - both
-              - --train-model
-              - "true"
-          environment_key: default
-
-        - task_key: refresh_semantic_views
-          depends_on:
-            - task_key: fault_prediction
-          spark_python_task:
-            python_file: ../databricks/apply_semantic_views.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-          environment_key: default
-
-        - task_key: refresh_metric_views
-          depends_on:
-            - task_key: refresh_semantic_views
-          spark_python_task:
-            python_file: ../databricks/create_uc_metric_views.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-          environment_key: default
-
-        - task_key: validate_outputs
-          depends_on:
-            - task_key: refresh_metric_views
-            - task_key: refresh_genie_space
-          spark_python_task:
-            python_file: ../databricks/validate_demo_outputs.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-          environment_key: default
-
-        - task_key: refresh_genie_space
-          depends_on:
-            - task_key: refresh_metric_views
-          spark_python_task:
-            python_file: ../databricks/deploy_genie_space.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-              - --warehouse-id
-              - ${var.sql_warehouse_id}
-              - --space-name
-              - ${var.genie_space_name}
-              - --genie-space-id
-              - ${var.genie_space_id}
-          environment_key: default
-      environments:
-        - environment_key: zerobus
-          spec:
-            environment_version: "2"
-            dependencies:
-              - databricks-zerobus-ingest-sdk
-        - environment_key: default
-          spec:
-            environment_version: "2"
-            dependencies:
-              - mlflow
-              - scikit-learn
-              - databricks-sdk
-              - requests
-
-    iot_lakebase_oltp_mirror:
-      name: iot_lakebase_oltp_mirror_${bundle.target}
-      max_concurrent_runs: 1
-      queue:
-        enabled: true
-      schedule:
-        quartz_cron_expression: "${var.oltp_mirror_schedule_cron}"
-        timezone_id: "UTC"
+    iot_lakebase_mirror_event_driven:
+      name: IoT Lakebase OLTP Mirror (Event-Driven)
+      description: |
+        Exports vw_machine_current_status from Databricks to Lakebase PostgreSQL
+        for operational applications (real-time dashboards, APIs, external systems).
+      trigger:
+        table_update:
+          table_names:
+            - ${var.catalog}.${var.schema}.silver_machine_telemetry
+          condition: ANY_UPDATED
+          min_time_between_triggers_seconds: 60
         pause_status: UNPAUSED
+      max_concurrent_runs: 1
+      timeout_seconds: 300
       tasks:
-        - task_key: mirror_current_status_to_lakebase
+        - task_key: mirror_to_lakebase_oltp
           spark_python_task:
-            python_file: ../databricks/lakebase_oltp_mirror.py
+            python_file: ../databricks/lakebase/lakebase_oltp_mirror.py
             parameters:
               - --catalog
               - ${var.catalog}
               - --schema
               - ${var.schema}
-              - --jdbc-url
-              - ${var.lakebase_jdbc_url}
               - --db-host
-              - ${var.lakebase_db_host}
+              - "{{secrets/lakebase/postgres_hostname}}"
               - --db-port
-              - ${var.lakebase_db_port}
+              - "5432"
               - --db-name
-              - ${var.lakebase_db_name}
+              - "iot_demo"
               - --secret-scope
-              - ${var.lakebase_secret_scope}
+              - "lakebase"
               - --user-secret-key
-              - ${var.lakebase_user_secret_key}
+              - "postgres_user"
               - --password-secret-key
-              - ${var.lakebase_password_secret_key}
+              - "postgres_password"
               - --instance-id
-              - ${var.lakebase_instance_id}
-          environment_key: default
-        - task_key: validate_lakebase_parity
-          depends_on:
-            - task_key: mirror_current_status_to_lakebase
-          spark_python_task:
-            python_file: ../databricks/lakebase_parity_validation.py
-            parameters:
-              - --catalog
-              - ${var.catalog}
-              - --schema
-              - ${var.schema}
-              - --jdbc-url
-              - ${var.lakebase_jdbc_url}
-              - --secret-scope
-              - ${var.lakebase_secret_scope}
-              - --user-secret-key
-              - ${var.lakebase_user_secret_key}
-              - --password-secret-key
-              - ${var.lakebase_password_secret_key}
-          environment_key: default
-      environments:
-        - environment_key: default
-          spec:
-            environment_version: "2"
-            dependencies:
-              - psycopg2-binary
+              - iot_demo_event_driven
+              - --max-rows
+              - "100000"
+          new_cluster:
+            spark_version: 15.4.x-scala2.12
+            node_type_id: Standard_D4ds_v5
+            num_workers: 0
+            data_security_mode: USER_ISOLATION
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: local[*]
+              spark.driver.maxResultSize: 4g
+              spark.sql.adaptive.enabled: "false"
+            custom_tags:
+              ResourceClass: SingleNode
+            azure_attributes:
+              availability: SPOT_WITH_FALLBACK_AZURE
+              first_on_demand: 0
+              spot_bid_max_price: -1
+          libraries:
+            - pypi:
+                package: psycopg2-binary==2.9.9
+          timeout_seconds: 300
+          max_retries: 3
+          retry_on_timeout: true
+          min_retry_interval_millis: 10000
+      email_notifications:
+        on_failure:
+          - pete.welch@databricks.com
+        on_duration_warning_threshold_exceeded:
+          - pete.welch@databricks.com
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 35
+      tags:
+        environment: ${bundle.target}
+        pipeline: iot_lakebase_export
+        trigger_type: event_driven
+        external_system: lakebase_oltp
+        cost_center: manufacturing_ops
 
-    # Slack alerting feature disabled. Archived implementation under z_archive/slack/.
-    # iot_nonrun_slack_alerts:
-    #   name: iot_nonrun_slack_alerts_${bundle.target}
-    #   max_concurrent_runs: 1
-    #   queue:
-    #     enabled: true
-    #   schedule:
-    #     quartz_cron_expression: "${var.slack_alert_schedule_cron}"
-    #     timezone_id: "UTC"
-    #     pause_status: UNPAUSED
-    #   tasks:
-    #     - task_key: evaluate_and_send_slack_alerts
-    #       spark_python_task:
-    #         python_file: ../databricks/alert_nonrun_to_slack.py
-    #         parameters:
-    #           - --catalog
-    #           - ${var.catalog}
-    #           - --schema
-    #           - ${var.schema}
-    #           - --secret-scope
-    #           - ${var.zerobus_secret_scope}
-    #           - --webhook-secret-key
-    #           - ${var.slack_webhook_secret_key}
-    #           - --alert-email
-    #           - ${var.slack_alert_email}
-    #       environment_key: default
-    #   environments:
-    #     - environment_key: default
-    #       spec:
-    #         environment_version: "2"
-    #         dependencies:
-    #           - requests

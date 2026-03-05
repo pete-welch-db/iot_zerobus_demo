@@ -1,0 +1,87 @@
+resources:
+  jobs:
+    iot_realtime_views_refresh:
+      name: "IoT Real-Time Semantic Views Refresh"
+      description: "Refreshes semantic and metric views every 60s for ultra-low latency dashboards"
+      schedule:
+        quartz_cron_expression: "0 * * * * ?"
+        timezone_id: "UTC"
+        pause_status: "UNPAUSED"
+      max_concurrent_runs: 1
+      timeout_seconds: 55
+      email_notifications:
+        on_failure:
+          - "pete.welch@databricks.com"
+        on_duration_warning_threshold_exceeded:
+          - "pete.welch@databricks.com"
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 45
+      tasks:
+        - task_key: "refresh_semantic_views"
+          description: "Refresh semantic views (vw_machine_health, vw_machine_current_status, etc.)"
+          spark_python_task:
+            python_file: ../databricks/semantic/apply_semantic_views.py
+            parameters:
+              - "--catalog"
+              - "{{job.parameters.catalog}}"
+              - "--schema"
+              - "{{job.parameters.schema}}"
+              - "--telemetry-live-window-hours"
+              - "24"
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "Standard_D4ds_v5"
+            num_workers: 0
+            spark_conf:
+              spark.databricks.cluster.profile: "singleNode"
+              spark.master: "local[*]"
+              spark.databricks.delta.optimizeWrite.enabled: "true"
+              spark.databricks.delta.autoCompact.enabled: "true"
+              spark.sql.adaptive.enabled: "true"
+              spark.sql.adaptive.coalescePartitions.enabled: "true"
+            custom_tags:
+              ResourceClass: "SingleNode"
+            azure_attributes:
+              availability: "ON_DEMAND_AZURE"
+              first_on_demand: 1
+          timeout_seconds: 30
+          max_retries: 1
+          retry_on_timeout: false
+        - task_key: "refresh_metric_views"
+          description: "Refresh UC metric views (mv_machine_risk, mv_machine_current, etc.)"
+          depends_on:
+            - task_key: "refresh_semantic_views"
+          spark_python_task:
+            python_file: ../databricks/semantic/create_uc_metric_views.py
+            parameters:
+              - "--catalog"
+              - "{{job.parameters.catalog}}"
+              - "--schema"
+              - "{{job.parameters.schema}}"
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "Standard_D4ds_v5"
+            num_workers: 0
+            spark_conf:
+              spark.databricks.cluster.profile: "singleNode"
+              spark.master: "local[*]"
+              spark.databricks.delta.optimizeWrite.enabled: "true"
+              spark.sql.adaptive.enabled: "true"
+            custom_tags:
+              ResourceClass: "SingleNode"
+          timeout_seconds: 20
+          max_retries: 1
+          retry_on_timeout: false
+      parameters:
+        - name: "catalog"
+          default: "${var.catalog}"
+        - name: "schema"
+          default: "${var.schema}"
+      tags:
+        environment: "production"
+        use_case: "iot_manufacturing"
+        latency: "real_time"
+        refresh_frequency: "60s"

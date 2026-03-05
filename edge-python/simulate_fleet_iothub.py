@@ -58,12 +58,20 @@ class ScenarioRuntime:
         temp_fault_threshold: float,
         vibration_fault_threshold: float,
         seed: int,
+        risk_profile: str = "healthy",
+        phase_offset_seconds: float = 0.0,
+        wave_mode: str = "none",
+        wave_ramp_seconds: int = 600,
     ) -> None:
         self.machine_id = machine_id
         self.fault_period_seconds = max(30, fault_period_seconds)
         self.temp_fault_threshold = temp_fault_threshold
         self.vibration_fault_threshold = vibration_fault_threshold
         self.random = random.Random(seed)
+        self.risk_profile = risk_profile
+        self.phase_offset_seconds = max(0.0, phase_offset_seconds)
+        self.wave_mode = wave_mode
+        self.wave_ramp_seconds = max(60, wave_ramp_seconds)
 
         self.temp_c = self.random.uniform(58.0, 67.0)
         self.vibration_mm_s = self.random.uniform(2.5, 4.5)
@@ -74,11 +82,28 @@ class ScenarioRuntime:
         self.state = "RUN"
         self.fault_code = None
 
+    def _profile_multiplier(self) -> float:
+        if self.risk_profile == "risky":
+            return 1.30
+        if self.risk_profile == "degrading":
+            return 1.10
+        return 0.90
+
+    def _wave_factor(self, elapsed_seconds: float) -> float:
+        if self.wave_mode != "wave":
+            return 1.0
+        return min(1.0, max(0.0, elapsed_seconds / float(self.wave_ramp_seconds)))
+
     def update_state(self, elapsed_seconds: float) -> None:
-        phase = elapsed_seconds % self.fault_period_seconds
-        normal_cutoff = 0.55 * self.fault_period_seconds
-        warning_cutoff = 0.85 * self.fault_period_seconds
-        fault_cutoff = 0.95 * self.fault_period_seconds
+        adjusted_elapsed = max(0.0, elapsed_seconds + self.phase_offset_seconds)
+        phase = adjusted_elapsed % self.fault_period_seconds
+        stress = self._profile_multiplier() * (0.35 + 0.65 * self._wave_factor(elapsed_seconds))
+        normal_fraction = max(0.35, 0.72 - (0.20 * stress))
+        warning_fraction = max(normal_fraction + 0.05, min(0.92, 0.91 - (0.08 * stress)))
+        fault_fraction = max(warning_fraction + 0.02, min(0.98, 0.97 - (0.04 * stress)))
+        normal_cutoff = normal_fraction * self.fault_period_seconds
+        warning_cutoff = warning_fraction * self.fault_period_seconds
+        fault_cutoff = fault_fraction * self.fault_period_seconds
 
         if phase < normal_cutoff:
             self.state = "RUN"
@@ -95,11 +120,14 @@ class ScenarioRuntime:
             self.state = "RUN"
             self.fault_code = None
             progress = (phase - normal_cutoff) / (warning_cutoff - normal_cutoff)
-            self.temp_c = 75.0 + progress * (self.temp_fault_threshold + 8.0 - 75.0)
-            self.vibration_mm_s = 7.0 + progress * (self.vibration_fault_threshold + 2.0 - 7.0)
+            profile_boost = self._profile_multiplier()
+            self.temp_c = 74.0 + progress * (self.temp_fault_threshold + (8.0 * profile_boost) - 74.0)
+            self.vibration_mm_s = 6.5 + progress * (
+                self.vibration_fault_threshold + (2.0 * profile_boost) - 6.5
+            )
             self.throughput_cpm = max(30, int(95 - 50 * progress + self.random.uniform(-2, 2)))
-            self.rpm = int(2400 + progress * 600 + self.random.uniform(-15, 15))
-            self.current_amps = 7.0 + progress * 5.5 + self.random.uniform(-0.3, 0.3)
+            self.rpm = int(2350 + progress * (650 * profile_boost) + self.random.uniform(-15, 15))
+            self.current_amps = 6.8 + progress * (5.8 * profile_boost) + self.random.uniform(-0.3, 0.3)
             self.humidity_pct = 50.0 + progress * 20.0 + self.random.uniform(-1, 1)
             return
 
@@ -177,6 +205,10 @@ class DeviceRuntime(ScenarioRuntime):
         temp_fault_threshold: float,
         vibration_fault_threshold: float,
         seed: int,
+        risk_profile: str,
+        phase_offset_seconds: float,
+        wave_mode: str,
+        wave_ramp_seconds: int,
     ) -> None:
         super().__init__(
             machine_id=config.machine_id,
@@ -184,6 +216,10 @@ class DeviceRuntime(ScenarioRuntime):
             temp_fault_threshold=temp_fault_threshold,
             vibration_fault_threshold=vibration_fault_threshold,
             seed=seed,
+            risk_profile=risk_profile,
+            phase_offset_seconds=phase_offset_seconds,
+            wave_mode=wave_mode,
+            wave_ramp_seconds=wave_ramp_seconds,
         )
         if not config.device_key:
             raise ValueError(f"Missing device_key for stream mode device {config.device_id}")
@@ -260,6 +296,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device-prefix", default="iotdev", help="Used by export-training mode")
     parser.add_argument("--padding", type=int, default=4, help="Used by export-training mode")
     parser.add_argument("--sample-interval-seconds", type=int, default=5, help="Used by export-training mode")
+    parser.add_argument("--phase-stagger-seconds", type=float, default=2.0)
+    parser.add_argument("--degrading-device-fraction", type=float, default=0.25)
+    parser.add_argument("--risky-device-fraction", type=float, default=0.15)
+    parser.add_argument("--wave-mode", choices=["none", "wave"], default="none")
+    parser.add_argument("--wave-ramp-seconds", type=int, default=600)
     parser.add_argument("--output-jsonl", default="synthetic_fault_training.jsonl")
     parser.add_argument("--output-csv", default="synthetic_fault_training.csv")
     parser.add_argument("--output-parquet", default="", help="Optional parquet output path (if pandas+pyarrow installed)")
@@ -279,6 +320,18 @@ def load_devices(path: str) -> List[DeviceConfig]:
     if not configs:
         raise ValueError("No devices found in devices-file.")
     return configs
+
+
+def _assign_risk_profile(args: argparse.Namespace, idx: int) -> str:
+    seeded = random.Random(args.seed + (idx * 7919))
+    roll = seeded.random()
+    risky_cutoff = max(0.0, min(1.0, args.risky_device_fraction))
+    degrading_cutoff = max(0.0, min(1.0, args.degrading_device_fraction))
+    if roll < risky_cutoff:
+        return "risky"
+    if roll < (risky_cutoff + degrading_cutoff):
+        return "degrading"
+    return "healthy"
 
 
 def run_device_loop(
@@ -315,19 +368,26 @@ def run_stream_mode(args: argparse.Namespace) -> None:
     devices = load_devices(args.devices_file)
     end_time = time.time() + args.duration_seconds
 
-    runtimes = [
-        DeviceRuntime(
-            config=device,
-            iothub_name=args.iothub_name,
-            token_ttl_seconds=args.token_ttl_seconds,
-            message_rate_hz=args.message_rate_hz,
-            fault_period_seconds=args.fault_period_seconds,
-            temp_fault_threshold=args.temp_fault_threshold,
-            vibration_fault_threshold=args.vibration_fault_threshold,
-            seed=args.seed + idx,
+    runtimes: List[DeviceRuntime] = []
+    for idx, device in enumerate(devices):
+        profile = _assign_risk_profile(args, idx)
+        phase_offset = idx * max(0.0, args.phase_stagger_seconds)
+        runtimes.append(
+            DeviceRuntime(
+                config=device,
+                iothub_name=args.iothub_name,
+                token_ttl_seconds=args.token_ttl_seconds,
+                message_rate_hz=args.message_rate_hz,
+                fault_period_seconds=args.fault_period_seconds,
+                temp_fault_threshold=args.temp_fault_threshold,
+                vibration_fault_threshold=args.vibration_fault_threshold,
+                seed=args.seed + idx,
+                risk_profile=profile,
+                phase_offset_seconds=phase_offset,
+                wave_mode=args.wave_mode,
+                wave_ramp_seconds=args.wave_ramp_seconds,
+            )
         )
-        for idx, device in enumerate(devices)
-    ]
     for runtime in runtimes:
         runtime.validate_target_fields()
     LOGGER.info("Payload field validation passed for %s devices.", len(runtimes))
@@ -383,12 +443,18 @@ def run_export_training_mode(args: argparse.Namespace) -> None:
     for idx in range(1, args.num_devices + 1):
         suffix = str(idx).zfill(args.padding)
         machine_id = f"{args.machine_prefix}-{suffix}"
+        profile = _assign_risk_profile(args, idx)
+        phase_offset = idx * max(0.0, args.phase_stagger_seconds)
         runtime = ScenarioRuntime(
             machine_id=machine_id,
             fault_period_seconds=args.fault_period_seconds,
             temp_fault_threshold=args.temp_fault_threshold,
             vibration_fault_threshold=args.vibration_fault_threshold,
             seed=args.seed + idx,
+            risk_profile=profile,
+            phase_offset_seconds=phase_offset,
+            wave_mode=args.wave_mode,
+            wave_ramp_seconds=args.wave_ramp_seconds,
         )
         runtime.validate_target_fields()
         machine_rows: List[Dict[str, Any]] = []

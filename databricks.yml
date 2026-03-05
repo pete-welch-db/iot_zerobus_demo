@@ -4,6 +4,8 @@ bundle:
 include:
   - resources/pipelines.yml
   - resources/jobs.yml
+  - resources/realtime_views_job.yml
+  - resources/apps.yml
 
 variables:
   catalog:
@@ -56,7 +58,7 @@ variables:
     default: iothub_eventhubs_connection_string
   iothub_bridge_checkpoint_path:
     description: Checkpoint location for IoT Hub to Zerobus bridge streaming job
-    default: dbfs:/tmp/iot_zerobus_demo/checkpoints/iothub_bridge
+    default: dbfs:/checkpoints/iothub-zerobus
   iothub_bridge_starting_offsets:
     description: Kafka/Event Hubs starting offsets mode for IoT Hub bridge (latest for live demo, earliest for backfill)
     default: latest
@@ -66,6 +68,9 @@ variables:
   iothub_bridge_processing_time:
     description: Processing trigger interval for continuous IoT Hub bridge micro-batches
     default: "5 seconds"
+  iothub_bridge_max_records_per_batch:
+    description: Max records processed per micro-batch to avoid OOM and smooth retries
+    default: "5000"
   iothub_bridge_backfill_run_mode:
     description: Explicit one-shot bridge mode for workflow backfill/sweep path
     default: available-now
@@ -75,28 +80,9 @@ variables:
   dashboard_mode:
     description: Dashboard cadence mode (demo or steady)
     default: demo
-  dashboard_refresh_seconds_demo:
-    description: AI/BI schedule interval in seconds for demo mode
-    default: "60"
-  dashboard_refresh_seconds_steady:
-    description: AI/BI schedule interval in seconds for steady-state mode
-    default: "300"
-  ml_scoring_schedule_demo:
-    description: Quartz cron for ML scoring in demo mode
-    default: "0 0/1 * * * ?"
-  ml_scoring_schedule_steady:
-    description: Quartz cron for ML scoring in steady-state mode
-    default: "0 0/5 * * * ?"
-  ml_scoring_schedule_cron:
-    description: Effective Quartz cron used by ML scoring job
-    default: "0 0/1 * * * ?"
-  oltp_mirror_schedule_cron:
-    description: Quartz cron used by Lakebase OLTP mirror job
-    default: "0 0/1 * * * ?"
-  # Slack feature disabled.
-  # slack_alert_schedule_cron:
-  #   description: Quartz cron used by non-run Slack alerting job
-  #   default: "0 0/1 * * * ?"
+  telemetry_live_window_hours:
+    description: Rolling telemetry window used by vw_machine_telemetry_live
+    default: "24"
   lakebase_project_id:
     description: Autoscaling Lakebase project identifier
     default: iot-demo-lakebase
@@ -127,16 +113,18 @@ variables:
   lakebase_jdbc_url:
     description: JDBC URL for Lakebase OLTP mirror job
     default: ""
-  # Slack feature disabled.
-  # slack_webhook_secret_key:
-  #   description: Secret key for Slack webhook URL
-  #   default: slack_webhook_url
-  # slack_alert_email:
-  #   description: Primary email mentioned in alerts
-  #   default: pete.welch@databricks.com
   zerobus_run_smoke_ingest:
     description: Whether zerobus setup job writes a single test record
     default: "false"
+  app_title:
+    description: Streamlit app title
+    default: IoT Manufacturing Flow Break Command Center
+  app_dashboard_url:
+    description: Published AI/BI dashboard URL for app embed
+    default: https://adb-984752964297111.11.azuredatabricks.net/embed/dashboardsv3/01f11755a5c31ce2ae7e3f1c7a514115?o=984752964297111
+  app_genie_space_id:
+    description: Genie space id for native app chat
+    default: "01f117215c6112179fbec6269981f89b"
 
 targets:
   dev:

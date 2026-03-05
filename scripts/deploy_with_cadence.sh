@@ -4,15 +4,14 @@ set -euo pipefail
 TARGET="${TARGET:-dev}"
 MODE="${MODE:-demo}" # demo|steady
 LAKEBASE_ENV_FILE="${LAKEBASE_ENV_FILE:-lakebase.env}"
+GENIE_SPACE_NAME="${GENIE_SPACE_NAME:-Manufacturing Command Center}"
+APP_GENIE_SPACE_ID="${APP_GENIE_SPACE_ID:-${GENIE_SPACE_ID:-}}"
+DEFAULT_GENIE_SPACE_ID="01f117215c6112179fbec6269981f89b"
 
 if [[ "$MODE" == "demo" ]]; then
-  ML_CRON="0 0/1 * * * ?"
-  MIRROR_CRON="0 0/1 * * * ?"
-  DASHBOARD_REFRESH_SECONDS="60"
+  TELEMETRY_LIVE_WINDOW_HOURS="24"
 else
-  ML_CRON="0 0/5 * * * ?"
-  MIRROR_CRON="0 0/5 * * * ?"
-  DASHBOARD_REFRESH_SECONDS="300"
+  TELEMETRY_LIVE_WINDOW_HOURS="24"
 fi
 
 if [[ -f "$LAKEBASE_ENV_FILE" ]]; then
@@ -41,13 +40,56 @@ done
 
 # Slack feature disabled and archived under z_archive/slack/.
 
+if [[ -z "${APP_GENIE_SPACE_ID:-}" || "${APP_GENIE_SPACE_ID:-}" == "__AUTO__" ]]; then
+  echo "==> Resolving Genie space ID for '${GENIE_SPACE_NAME}' via Databricks API"
+  RESOLVED_GENIE_SPACE_ID="$(GENIE_SPACE_NAME="$GENIE_SPACE_NAME" python3 - <<'PY'
+import json
+import os
+import re
+import subprocess
+import sys
+
+target = re.sub(r"[^a-z0-9]+", "", os.environ.get("GENIE_SPACE_NAME", "").lower())
+token = None
+seen = set()
+while True:
+    path = "/api/2.0/data-rooms?page_size=100"
+    if token:
+        path = f"/api/2.0/data-rooms?page_size=100&page_token={token}"
+    cmd = ["databricks", "api", "get", path]
+    proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    if proc.returncode != 0:
+        print("", end="")
+        sys.exit(0)
+    payload = json.loads(proc.stdout or "{}")
+    spaces = payload.get("spaces") or payload.get("data_rooms") or payload.get("dataRooms") or []
+    for space in spaces:
+        title = space.get("display_name") or space.get("title") or space.get("name") or ""
+        normalized = re.sub(r"[^a-z0-9]+", "", title.lower())
+        if normalized == target:
+            print(space.get("space_id") or space.get("id") or "", end="")
+            sys.exit(0)
+    token = payload.get("next_page_token") or payload.get("nextPageToken")
+    if not token or token in seen:
+        print("", end="")
+        sys.exit(0)
+    seen.add(token)
+PY
+)"
+  if [[ -n "$RESOLVED_GENIE_SPACE_ID" ]]; then
+    APP_GENIE_SPACE_ID="$RESOLVED_GENIE_SPACE_ID"
+  fi
+fi
+
+if [[ -z "${APP_GENIE_SPACE_ID:-}" || "${APP_GENIE_SPACE_ID:-}" == "__AUTO__" ]]; then
+  APP_GENIE_SPACE_ID="$DEFAULT_GENIE_SPACE_ID"
+fi
+echo "==> Using APP_GENIE_SPACE_ID=${APP_GENIE_SPACE_ID}"
+
 echo "==> Deploying bundle with cadence mode: $MODE"
 databricks bundle deploy -t "$TARGET" \
   --var "dashboard_mode=$MODE" \
-  --var "ml_scoring_schedule_cron=$ML_CRON" \
-  --var "oltp_mirror_schedule_cron=$MIRROR_CRON" \
-  --var "dashboard_refresh_seconds_demo=$DASHBOARD_REFRESH_SECONDS" \
-  --var "dashboard_refresh_seconds_steady=$DASHBOARD_REFRESH_SECONDS" \
+  --var "telemetry_live_window_hours=$TELEMETRY_LIVE_WINDOW_HOURS" \
   --var "lakebase_instance_id=${LAKEBASE_INSTANCE_ID:-}" \
   --var "lakebase_resource_name=${LAKEBASE_RESOURCE_NAME:-}" \
   --var "lakebase_db_host=${LAKEBASE_DB_HOST:-}" \
@@ -56,9 +98,8 @@ databricks bundle deploy -t "$TARGET" \
   --var "lakebase_secret_scope=${LAKEBASE_SECRET_SCOPE:-iot_zerobus_demo}" \
   --var "lakebase_user_secret_key=${LAKEBASE_USER_SECRET_KEY:-lakebase_db_user}" \
   --var "lakebase_password_secret_key=${LAKEBASE_PASSWORD_SECRET_KEY:-lakebase_db_password}" \
-  --var "lakebase_jdbc_url=${LAKEBASE_JDBC_URL:-}"
-
-echo "==> Updating AI/BI dashboard schedule to ${DASHBOARD_REFRESH_SECONDS}s"
-python3 scripts/configure_dashboard_schedule.py --interval-seconds "$DASHBOARD_REFRESH_SECONDS"
+  --var "lakebase_jdbc_url=${LAKEBASE_JDBC_URL:-}" \
+  --var "genie_space_id=${APP_GENIE_SPACE_ID}" \
+  --var "app_genie_space_id=${APP_GENIE_SPACE_ID}"
 
 echo "deploy with cadence phase complete."

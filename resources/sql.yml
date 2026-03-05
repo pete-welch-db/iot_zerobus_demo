@@ -8,7 +8,7 @@ resources:
         CREATE SCHEMA IF NOT EXISTS ${var.schema};
         USE SCHEMA ${var.schema};
         
-        -- The SQL below mirrors databricks/sql_views.sql with catalog/schema already in context.
+        -- The SQL below mirrors databricks/semantic/sql_views.sql with catalog/schema already in context.
         CREATE OR REPLACE VIEW vw_machine_telemetry_live AS
         SELECT
           event_time,

@@ -1,7 +1,7 @@
 # Genie Space: Manufacturing Command Center
 
 Use this as the canonical setup/instruction pack when creating the Genie Space.
-Automated deployment script: `databricks/deploy_genie_space.py`.
+Automated deployment script: `databricks/genie/deploy_genie_space.py`.
 
 ## Space Name
 `Manufacturing Command Center`

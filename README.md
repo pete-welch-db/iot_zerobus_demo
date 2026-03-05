@@ -44,15 +44,15 @@ Arduino-to-Databricks predictive maintenance and OEE demo using Azure IoT Hub, Z
 - `edge-python/sender.py`: serial -> IoT Hub sender fallback.
 - `edge-python/generate_sas_token.py`: helper for device SAS tokens.
 - `infra/azure_iot_hub_setup.md`: Azure setup steps and endpoint guidance.
-- `databricks/lakeflow_zerobus_config.json`: Zerobus connector configuration template.
-- `databricks/dlt_pipeline.py`: Bronze/Silver/Gold DLT pipeline.
-- `databricks/ml_anomaly_notebook.py`: anomaly scoring training/output script.
-- `databricks/ml_state_prediction_notebook.py`: fault prediction training/output script.
-- `databricks/sql_views.sql`: curated SQL semantic layer.
-- `databricks/manufacturing_command_center_dashboard.sql`: AI/BI dashboard query pack.
-- `databricks/genie_manufacturing_command_center.md`: Genie Space instruction and prompt pack.
-- `databricks/dashboard_notes.md`: dashboard implementation guidance.
-- `databricks/genie_space_notes.md`: Genie scope and instruction guidance.
+- `databricks/ingestion/lakeflow_zerobus_config.json`: Zerobus connector configuration template.
+- `databricks/pipelines/dlt_pipeline.py`: Bronze/Silver/Gold DLT pipeline.
+- `databricks/ml/ml_anomaly_notebook.py`: anomaly scoring training/output script.
+- `databricks/ml/ml_state_prediction_notebook.py`: fault prediction training/output script.
+- `databricks/semantic/sql_views.sql`: curated SQL semantic layer.
+- `databricks/dashboard/manufacturing_command_center_dashboard.sql`: AI/BI dashboard query pack.
+- `databricks/genie/genie_manufacturing_command_center.md`: Genie Space instruction and prompt pack.
+- `databricks/dashboard/dashboard_notes.md`: dashboard implementation guidance.
+- `databricks/genie/genie_space_notes.md`: Genie scope and instruction guidance.
 - `databricks.yml`: Databricks Asset Bundle root configuration.
 - `resources/pipelines.yml`: DLT pipeline resource.
 - `resources/jobs.yml`: pipeline refresh + ML scoring jobs.
@@ -275,15 +275,39 @@ scripts/provision_lakebase_autoscaling.sh
 TARGET=dev MODE=demo scripts/deploy_with_cadence.sh
 ```
 
-`scripts/deploy_with_cadence.sh` handles cadence deployment for ingest, ML, and Lakebase mirror.
+### Databricks App (Streamlit)
 
-1) Run one-click end-to-end demo workflow (recommended):
+This repo includes a Databricks App resource (`resources/apps.yml`) and Streamlit code under `app/`.
+
+App capabilities:
+- Narrative landing page (IoT manufacturing story + citations)
+- Embedded AI/BI dashboard
+- Flow-break risk command center over UC views
+- Native Genie chat surface
+- Lakebase live operational table reads
+
+Deploy with bundle:
 
 ```bash
-databricks bundle run -t dev iot_demo_realtime_workflow
+databricks bundle validate -t dev
+databricks bundle deploy -t dev
 ```
 
-2) Start continuous near-real-time ML scoring (optional):
+The deployed app resource is named `iot-flowbreak-app-dev` for the `dev` target.
+
+Runtime configuration is controlled by app environment variables (for example):
+- `APP_CATALOG` / `APP_SCHEMA`
+- `DATABRICKS_WAREHOUSE_ID`
+- `APP_DASHBOARD_URL`
+- `APP_GENIE_SPACE_ID`
+- `LAKEBASE_DB_HOST` / `LAKEBASE_DB_PORT` / `LAKEBASE_DB_NAME` / `LAKEBASE_DB_USER` / `LAKEBASE_DB_PASSWORD`
+
+Demo runbook:
+- `docs/app_demo_flow.md`
+
+`scripts/deploy_with_cadence.sh` handles cadence deployment for ingest and post-medallion jobs.
+
+1) Start post-medallion refresh chain (ML + semantic/metric views + Lakebase mirror + dashboard refresh task):
 
 ```bash
 databricks bundle run -t dev iot_ml_realtime_scoring
@@ -304,12 +328,11 @@ TARGET=dev scripts/demo_generate.sh
 TARGET=dev scripts/demo_stop.sh
 ```
 
-3) Always-on ingest + medallion behavior (recommended for live demo):
+2) Always-on ingest + medallion behavior (recommended for live demo):
 
 - `iothub_to_zerobus_autorun_${bundle.target}` is now a long-running continuous bridge job (`--run-mode continuous`) from IoT Hub into raw input table storage.
 - `iot_telemetry_medallion_${bundle.target}` is configured with `continuous: true` and processes new data while active.
-- `iot_pipeline_keepalive_${bundle.target}` is used by `scripts/demo_go.sh` to start/ensure the DLT pipeline when not running.
-- `iot_ml_realtime_scoring_${bundle.target}` remains optional near-live scoring to refresh anomaly/fault outputs.
+- `iot_ml_realtime_scoring_${bundle.target}` is an on-demand post-medallion chain and no longer runs on a separate cron schedule.
 
 Use `go` to ensure both continuous services are running before the talk track:
 
@@ -322,7 +345,7 @@ Troubleshooting:
 - Keep the bridge checkpoint path stable to avoid replay/duplication surprises during a demo.
 - For intentional backfill, run the bridge in one-shot mode (`--run-mode available-now --starting-offsets earliest`) outside the live talk track.
 
-The end-to-end workflow includes preflight checks, Zerobus setup, IoT Hub bridge, medallion refresh, batch+realtime ML scoring, semantic view refresh, UC metric view refresh, Genie refresh, and output validation.
+The post-medallion job includes medallion sync, batch+realtime ML scoring, semantic view refresh, UC metric view refresh, Lakebase mirror + parity validation, and dashboard refresh checks.
 
 ## Expected Tables and Views
 
@@ -352,10 +375,10 @@ UC metric views:
 ## Manufacturing Command Center Dashboard + Genie
 
 1. Build Databricks AI/BI dashboard named `Manufacturing Command Center` using queries in:
-   - `databricks/manufacturing_command_center_dashboard.sql`
+   - `databricks/dashboard/manufacturing_command_center_dashboard.sql`
 2. Create/update Genie Space named `Manufacturing Command Center` via:
-   - `databricks/deploy_genie_space.py`
-   - `databricks/genie_manufacturing_command_center.md` (context reference)
+   - `databricks/genie/deploy_genie_space.py`
+   - `databricks/genie/genie_manufacturing_command_center.md` (context reference)
 3. Include only curated views in Genie:
    - `vw_machine_telemetry_live`
    - `vw_machine_health`
@@ -377,6 +400,29 @@ UC metric views:
    - `gold_machine_health_5m` updates with availability/performance/quality/OEE.
 6. ML outputs
    - `ml_anomaly_scores` and `ml_fault_predictions` populated.
+   - Risk mix is non-flat for demo windows (expect WATCH/CRITICAL rows, not all NORMAL):
+     ```sql
+     SELECT
+       CASE
+         WHEN prob_fault_next_5m >= 0.8 THEN 'CRITICAL'
+         WHEN prob_fault_next_5m >= 0.5 THEN 'WATCH'
+         ELSE 'NORMAL'
+       END AS risk_band,
+       COUNT(*) AS machine_count
+     FROM welch.iot_demo_dev.vw_machine_current_status
+     WHERE last_event_time >= current_timestamp() - INTERVAL 10 MINUTES
+     GROUP BY 1
+     ORDER BY 1;
+     ```
+   - Fault code diversity exists in recent telemetry:
+     ```sql
+     SELECT COALESCE(fault_code, 'NONE') AS fault_code, COUNT(*) AS records
+     FROM welch.iot_demo_dev.silver_machine_features
+     WHERE ts >= current_timestamp() - INTERVAL 10 MINUTES
+     GROUP BY 1
+     ORDER BY records DESC
+     LIMIT 10;
+     ```
 7. SQL semantic layer
    - `vw_machine_health` shows anomaly + predicted fault columns.
 8. Business story interaction

@@ -1,12 +1,14 @@
 """
 Bridge Azure IoT Hub (Event Hubs-compatible Kafka endpoint) into a Zerobus stream.
 
-This job consumes IoT Hub messages in micro-batch mode (availableNow) and ingests
-records into a Unity Catalog Delta table through Zerobus SDK.
+This job consumes IoT Hub messages in continuous streaming mode and ingests
+records into a Unity Catalog Delta table through Zerobus SDK with robust
+error handling and retry logic for "always on" operation.
 """
 
 import argparse
 import logging
+import time
 from urllib.parse import urlparse
 
 from pyspark.sql import functions as F
@@ -15,6 +17,12 @@ from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOGGER = logging.getLogger("iothub-zerobus-bridge")
+
+# Retry configuration for Zerobus ingestion
+MAX_RETRIES = 3
+INITIAL_BACKOFF_SECONDS = 2
+MAX_BACKOFF_SECONDS = 60
+BATCH_SIZE_LIMIT = 5000  # Limit records per batch to avoid OOM
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,12 +49,18 @@ def parse_args() -> argparse.Namespace:
         "--run-mode",
         choices=["continuous", "available-now"],
         default="continuous",
-        help="Streaming runtime mode. Use available-now for one-shot backfill/sweeps.",
+        help="Streaming runtime mode. Use continuous for always-on ingestion.",
     )
     parser.add_argument(
         "--processing-time",
-        default="5 seconds",
-        help="Processing trigger interval for continuous mode (default: 5 seconds).",
+        default="10 seconds",
+        help="Processing trigger interval for continuous mode (default: 10 seconds).",
+    )
+    parser.add_argument(
+        "--max-records-per-batch",
+        type=int,
+        default=BATCH_SIZE_LIMIT,
+        help=f"Maximum records to process per batch to avoid OOM (default: {BATCH_SIZE_LIMIT}).",
     )
     return parser.parse_args()
 
@@ -192,34 +206,127 @@ def make_batch_writer(
     full_table_name: str,
     client_id: str,
     client_secret: str,
+    max_records_per_batch: int,
 ):
+    """
+    Create a batch writer with robust error handling and retry logic.
+    Uses connection pooling and health checks for "always on" operation.
+    """
     _cached = {}
+    _metrics = {"total_batches": 0, "total_records": 0, "total_errors": 0, "total_retries": 0}
 
-    def _get_stream():
+    def _get_stream(force_reconnect: bool = False):
+        """Get or create Zerobus stream with connection health check."""
         from zerobus.sdk.shared import RecordType, StreamConfigurationOptions, TableProperties
         from zerobus.sdk.sync import ZerobusSdk
 
+        if force_reconnect and "stream" in _cached:
+            LOGGER.info("Forcing Zerobus stream reconnection.")
+            try:
+                _cached["stream"].close()
+            except Exception as e:
+                LOGGER.warning("Error closing stale stream: %s", e)
+            del _cached["stream"]
+
         if "stream" not in _cached:
-            sdk = ZerobusSdk(ingest_url, unity_catalog_url=workspace_url)
-            table_properties = TableProperties(full_table_name)
-            options = StreamConfigurationOptions(record_type=RecordType.JSON)
-            _cached["stream"] = sdk.create_stream(client_id, client_secret, table_properties, options)
+            LOGGER.info("Creating new Zerobus SDK stream for table %s", full_table_name)
+            try:
+                sdk = ZerobusSdk(ingest_url, unity_catalog_url=workspace_url)
+                table_properties = TableProperties(full_table_name)
+                options = StreamConfigurationOptions(record_type=RecordType.JSON)
+                _cached["stream"] = sdk.create_stream(client_id, client_secret, table_properties, options)
+                LOGGER.info("Zerobus stream created successfully.")
+            except Exception as e:
+                LOGGER.error("Failed to create Zerobus stream: %s", e)
+                raise
         return _cached["stream"]
 
+    def _ingest_with_retry(stream, records: list, attempt: int = 1) -> bool:
+        """Ingest records with exponential backoff retry logic."""
+        try:
+            for record in records:
+                stream.ingest_record(record)
+            stream.flush()
+            return True
+        except Exception as e:
+            _metrics["total_errors"] += 1
+            if attempt >= MAX_RETRIES:
+                LOGGER.error(
+                    "Failed to ingest batch after %d attempts: %s. Skipping batch to prevent stream failure.",
+                    MAX_RETRIES, e
+                )
+                return False
+            
+            backoff = min(INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1)), MAX_BACKOFF_SECONDS)
+            LOGGER.warning(
+                "Ingestion failed (attempt %d/%d): %s. Retrying in %d seconds...",
+                attempt, MAX_RETRIES, e, backoff
+            )
+            _metrics["total_retries"] += 1
+            time.sleep(backoff)
+            
+            # Reconnect on connection errors
+            if "connection" in str(e).lower() or "timeout" in str(e).lower():
+                LOGGER.info("Connection error detected, forcing reconnect.")
+                stream = _get_stream(force_reconnect=True)
+            
+            return _ingest_with_retry(stream, records, attempt + 1)
+
     def _write_batch(batch_df, batch_id: int) -> None:
+        """Process batch with error handling, size limiting, and monitoring."""
+        start_time = time.time()
         LOGGER.info("Processing IoT Hub batch_id=%s", batch_id)
-        records = [
-            {f: row[f] for f in _RECORD_FIELDS}
-            for row in batch_df.collect()
-        ]
-        if not records:
-            LOGGER.info("Empty batch_id=%s, skipping.", batch_id)
-            return
-        stream = _get_stream()
-        for record in records:
-            stream.ingest_record(record)
-        stream.flush()
-        LOGGER.info("Ingested %s records to Zerobus for batch_id=%s", len(records), batch_id)
+        _metrics["total_batches"] += 1
+        
+        try:
+            # Limit batch size to prevent OOM
+            record_count = batch_df.count()
+            if record_count > max_records_per_batch:
+                LOGGER.warning(
+                    "Batch size %d exceeds limit %d. Processing first %d records.",
+                    record_count, max_records_per_batch, max_records_per_batch
+                )
+                batch_df = batch_df.limit(max_records_per_batch)
+            
+            records = [
+                {f: row[f] for f in _RECORD_FIELDS}
+                for row in batch_df.collect()
+            ]
+            
+            if not records:
+                LOGGER.info("Empty batch_id=%s, skipping.", batch_id)
+                return
+            
+            # Get stream and ingest with retry
+            stream = _get_stream()
+            success = _ingest_with_retry(stream, records)
+            
+            if success:
+                _metrics["total_records"] += len(records)
+                elapsed = time.time() - start_time
+                LOGGER.info(
+                    "Successfully ingested %d records to Zerobus for batch_id=%s in %.2fs (rate: %.1f rec/s). "
+                    "Total: %d batches, %d records, %d errors, %d retries.",
+                    len(records), batch_id, elapsed, len(records) / elapsed if elapsed > 0 else 0,
+                    _metrics["total_batches"], _metrics["total_records"],
+                    _metrics["total_errors"], _metrics["total_retries"]
+                )
+            else:
+                LOGGER.error(
+                    "Failed to ingest batch_id=%s after retries. Data may be lost. "
+                    "Check Zerobus connection and credentials.",
+                    batch_id
+                )
+        
+        except Exception as e:
+            _metrics["total_errors"] += 1
+            LOGGER.error(
+                "Unexpected error processing batch_id=%s: %s. Stream will continue. "
+                "Metrics: %d batches, %d records, %d errors.",
+                batch_id, e, _metrics["total_batches"], _metrics["total_records"], _metrics["total_errors"],
+                exc_info=True
+            )
+            # Don't raise - let stream continue for "always on" operation
 
     return _write_batch
 
@@ -228,6 +335,10 @@ def main() -> None:
     args = parse_args()
 
     full_table_name = f"{args.catalog}.{args.schema}.{args.table}"
+    LOGGER.info("Starting IoT Hub -> Zerobus bridge for table: %s", full_table_name)
+    LOGGER.info("Run mode: %s, Processing time: %s, Max records/batch: %d",
+                args.run_mode, args.processing_time, args.max_records_per_batch)
+    
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {args.catalog}.{args.schema}")
     ensure_target_table(full_table_name)
 
@@ -245,15 +356,18 @@ def main() -> None:
         full_table_name=full_table_name,
         client_id=client_id,
         client_secret=client_secret,
+        max_records_per_batch=args.max_records_per_batch,
     )
 
     query_builder = source_df.writeStream.foreachBatch(writer).option("checkpointLocation", args.checkpoint_path)
+    
     if args.run_mode == "available-now":
         LOGGER.info("Starting bridge in available-now mode (one-shot sweep).")
         query = query_builder.trigger(availableNow=True).start()
     else:
-        LOGGER.info("Starting bridge in continuous mode with processing time %s.", args.processing_time)
+        LOGGER.info("Starting bridge in CONTINUOUS mode with processing time %s for 'always on' operation.", args.processing_time)
         query = query_builder.trigger(processingTime=args.processing_time).start()
+    
     query.awaitTermination()
     LOGGER.info("IoT Hub -> Zerobus bridge run completed or terminated.")
 

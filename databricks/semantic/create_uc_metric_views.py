@@ -139,8 +139,14 @@ def main() -> None:
           measures:
             - name: Avg Anomaly Score
               expr: AVG(anomaly_score)
-            - name: Avg Fault Risk
+            - name: Avg Fault Risk 5m
               expr: AVG(prob_fault_next_5m)
+            - name: Avg Fault Risk 1h
+              expr: AVG(prob_fault_next_1h)
+            - name: Avg Fault Risk 24h
+              expr: AVG(prob_fault_next_24h)
+            - name: Avg Fault Risk 7d
+              expr: AVG(prob_fault_next_7d)
             - name: High Risk Windows
               expr: SUM(CASE WHEN prob_fault_next_5m >= 0.5 THEN 1 ELSE 0 END)
             - name: Anomaly Windows
@@ -211,8 +217,14 @@ def main() -> None:
               expr: AVG(load_pct)
             - name: Current OEE Pct
               expr: AVG(oee_pct)
-            - name: Current Fault Risk
+            - name: Current Fault Risk 5m
               expr: AVG(prob_fault_next_5m)
+            - name: Current Fault Risk 1h
+              expr: AVG(prob_fault_next_1h)
+            - name: Current Fault Risk 24h
+              expr: AVG(prob_fault_next_24h)
+            - name: Current Fault Risk 7d
+              expr: AVG(prob_fault_next_7d)
             - name: Current Anomaly Score
               expr: AVG(anomaly_score)
             - name: Current Power kW

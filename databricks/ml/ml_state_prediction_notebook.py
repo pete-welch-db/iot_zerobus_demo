@@ -45,6 +45,12 @@ feature_cols_all = feature_cols_num + feature_cols_cat
 _SELECT_COLS = ["machine_id", "event_time"] + feature_cols_all + ["fault_code"]
 
 HORIZON_SECONDS = 300
+HORIZON_SPECS = (
+    ("5m", 300),
+    ("1h", 3600),
+    ("24h", 86400),
+    ("7d", 604800),
+)
 
 
 def _feature_struct():
@@ -68,6 +74,20 @@ def _build_labeled_spark_df(source_df):
         F.when(F.max(is_fault_flag).over(w_future) >= 1, F.lit(1)).otherwise(F.lit(0)),
     )
     return labeled
+
+
+def _expand_horizons_from_5m(prob_col):
+    """Project short-horizon fault probability into planning horizons."""
+    prob = F.greatest(F.lit(0.0), F.least(F.lit(1.0), prob_col))
+    result = {}
+    for label, seconds in HORIZON_SPECS:
+        if label == "5m":
+            result[label] = prob
+            continue
+        ratio = float(seconds) / float(HORIZON_SECONDS)
+        projected = F.lit(1.0) - F.pow(F.lit(1.0) - prob, F.lit(ratio))
+        result[label] = F.greatest(F.lit(0.0), F.least(F.lit(1.0), projected))
+    return result
 
 
 def _latest_training_run_model_uri() -> str:
@@ -184,13 +204,35 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
         scored_df = (
             source_sdf
             .withColumn("prob_fault_next_5m", predict_udf(_feature_struct()))
+            .withColumn("prob_fault_next_5m", F.greatest(F.lit(0.0), F.least(F.lit(1.0), F.col("prob_fault_next_5m"))))
+        )
+        horizon_cols = _expand_horizons_from_5m(F.col("prob_fault_next_5m"))
+        scored_df = (
+            scored_df
+            .withColumn("prob_fault_next_1h", horizon_cols["1h"])
+            .withColumn("prob_fault_next_24h", horizon_cols["24h"])
+            .withColumn("prob_fault_next_7d", horizon_cols["7d"])
             .withColumn("predicted_fault_next_5m", F.col("prob_fault_next_5m") >= 0.5)
+            .withColumn("predicted_fault_next_1h", F.col("prob_fault_next_1h") >= 0.5)
+            .withColumn("predicted_fault_next_24h", F.col("prob_fault_next_24h") >= 0.5)
+            .withColumn("predicted_fault_next_7d", F.col("prob_fault_next_7d") >= 0.5)
             .withColumn("inference_type", F.lit(mode))
             .withColumn("model_run_id", F.lit(model_run_id))
             .withColumn("scored_at", F.current_timestamp())
             .select(
-                "machine_id", "event_time", "prob_fault_next_5m",
-                "predicted_fault_next_5m", "inference_type", "model_run_id", "scored_at",
+                "machine_id",
+                "event_time",
+                "prob_fault_next_5m",
+                "predicted_fault_next_5m",
+                "prob_fault_next_1h",
+                "predicted_fault_next_1h",
+                "prob_fault_next_24h",
+                "predicted_fault_next_24h",
+                "prob_fault_next_7d",
+                "predicted_fault_next_7d",
+                "inference_type",
+                "model_run_id",
+                "scored_at",
             )
         )
 
@@ -202,6 +244,8 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
             stats = scored_df.agg(
                 F.avg("prob_fault_next_5m").alias("mean_prob"),
                 F.avg(F.col("predicted_fault_next_5m").cast("double")).alias("high_risk_rate"),
+                F.avg("prob_fault_next_24h").alias("mean_prob_24h"),
+                F.avg("prob_fault_next_7d").alias("mean_prob_7d"),
             ).first()
             mlflow.log_params(
                 {"inference_type": mode, "rows_scored": row_count, "machines_scored_mode": machine_count}
@@ -210,6 +254,8 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
                 {
                     "high_risk_rate": float(stats["high_risk_rate"] or 0),
                     "mean_fault_probability": float(stats["mean_prob"] or 0),
+                    "mean_fault_probability_24h": float(stats["mean_prob_24h"] or 0),
+                    "mean_fault_probability_7d": float(stats["mean_prob_7d"] or 0),
                 }
             )
             print(f"[fault:{mode}] rows_scored={row_count} machines_scored={machine_count}")

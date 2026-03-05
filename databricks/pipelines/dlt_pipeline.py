@@ -1,4 +1,4 @@
-import dlt
+from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType, TimestampType
 
@@ -31,7 +31,7 @@ telemetry_schema = StructType(
 )
 
 
-@dlt.table(
+@dp.table(
     comment="Raw IoT Hub messages and transport metadata from Zerobus/Lakeflow source table.",
     table_properties={"quality": "bronze"},
 )
@@ -85,25 +85,25 @@ def bronze_iot_raw():
     )
 
 
-@dlt.table(
+@dp.table(
     comment="Parsed telemetry with typed schema and quality constraints.",
     table_properties={"quality": "silver"},
 )
-@dlt.expect("valid_state", "state IN ('RUN', 'STOPPED', 'FAULT')")
-@dlt.expect("non_negative_throughput", "throughput_cpm >= 0")
-@dlt.expect("temp_reasonable", "temp_c BETWEEN -20 AND 250")
-@dlt.expect("vibration_reasonable", "vibration_mm_s BETWEEN 0 AND 100")
-@dlt.expect("rpm_reasonable", "rpm BETWEEN 0 AND 10000")
-@dlt.expect("current_reasonable", "current_amps BETWEEN 0 AND 50")
-@dlt.expect("humidity_reasonable", "humidity_pct BETWEEN 0 AND 100")
-@dlt.expect("load_reasonable", "load_pct BETWEEN 0 AND 100")
-@dlt.expect("power_reasonable", "power_kw BETWEEN 0 AND 200")
-@dlt.expect("power_factor_reasonable", "power_factor BETWEEN 0 AND 1")
-@dlt.expect("voltage_reasonable", "voltage_v BETWEEN 100 AND 600")
-@dlt.expect("pressure_reasonable", "pressure_bar BETWEEN 0 AND 50")
-@dlt.expect("flow_reasonable", "flow_rate_lpm BETWEEN 0 AND 1000")
+@dp.expect("valid_state", "state IN ('RUN', 'STOPPED', 'FAULT')")
+@dp.expect("non_negative_throughput", "throughput_cpm >= 0")
+@dp.expect("temp_reasonable", "temp_c BETWEEN -20 AND 250")
+@dp.expect("vibration_reasonable", "vibration_mm_s BETWEEN 0 AND 100")
+@dp.expect("rpm_reasonable", "rpm BETWEEN 0 AND 10000")
+@dp.expect("current_reasonable", "current_amps BETWEEN 0 AND 50")
+@dp.expect("humidity_reasonable", "humidity_pct BETWEEN 0 AND 100")
+@dp.expect("load_reasonable", "load_pct BETWEEN 0 AND 100")
+@dp.expect("power_reasonable", "power_kw BETWEEN 0 AND 200")
+@dp.expect("power_factor_reasonable", "power_factor BETWEEN 0 AND 1")
+@dp.expect("voltage_reasonable", "voltage_v BETWEEN 100 AND 600")
+@dp.expect("pressure_reasonable", "pressure_bar BETWEEN 0 AND 50")
+@dp.expect("flow_reasonable", "flow_rate_lpm BETWEEN 0 AND 1000")
 def silver_machine_telemetry():
-    parsed = dlt.read_stream("bronze_iot_raw").withColumn(
+    parsed = spark.readStream.table("bronze_iot_raw").withColumn(
         "parsed_json",
         F.from_json(F.col("raw_body"), telemetry_schema),
     )
@@ -147,12 +147,12 @@ def silver_machine_telemetry():
     )
 
 
-@dlt.table(
+@dp.table(
     comment="Windowed machine health/OEE style KPI aggregates.",
     table_properties={"quality": "gold"},
 )
 def gold_machine_health_5m():
-    silver = dlt.read_stream("silver_machine_telemetry").withWatermark("event_time", "10 minutes")
+    silver = spark.readStream.table("silver_machine_telemetry").withWatermark("event_time", "2 minutes")
 
     event_count = F.count("*")
 

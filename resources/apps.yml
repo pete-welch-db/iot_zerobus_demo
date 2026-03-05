@@ -1,0 +1,6 @@
+resources:
+  apps:
+    iot_flowbreak_streamlit_app:
+      name: iot-flowbreak-app-${bundle.target}
+      description: Streamlit app for IoT flow break risk demo.
+      source_code_path: ../app

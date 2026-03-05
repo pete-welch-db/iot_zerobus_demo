@@ -50,7 +50,7 @@ flowchart LR
 - Keep existing standalone jobs for debugging and ad hoc reruns.
 
 ### Phase 2: Add Preflight + Validation Scripts
-- Add `databricks/preflight_checks.py`:
+- Add `databricks/ops/preflight_checks.py`:
   - Verify required secrets exist and are readable:
     - `zerobus_sp_client_id`
     - `zerobus_sp_client_secret`
@@ -58,7 +58,7 @@ flowchart LR
   - Verify target UC path exists and is writable:
     - `${var.catalog}.${var.schema}.${var.raw_input_table}`
   - Validate essential bundle variables are non-empty.
-- Add `databricks/validate_demo_outputs.py`:
+- Add `databricks/ops/validate_demo_outputs.py`:
   - Assert row-count thresholds after run:
     - `raw_iothub_messages > 0`
     - `bronze_iot_raw > 0`

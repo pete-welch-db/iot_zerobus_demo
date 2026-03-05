@@ -21,12 +21,12 @@ This is a planning document only (no implementation in this step).
   - `iot_pipeline_refresh_${bundle.target}`
   - `iot_ml_scoring_manual_${bundle.target}`
 - SQL/view templates:
-  - `databricks/sql_views.sql`
-  - `databricks/dashboard_notes.md`
-  - `databricks/genie_space_notes.md`
+  - `databricks/semantic/sql_views.sql`
+  - `databricks/dashboard/dashboard_notes.md`
+  - `databricks/genie/genie_space_notes.md`
 
 ## Phase 1: Semantic Layer Hardening
-1. Validate and update SQL views in `databricks/sql_views.sql` to use `welch.iot_demo_dev` consistently.
+1. Validate and update SQL views in `databricks/semantic/sql_views.sql` to use `welch.iot_demo_dev` consistently.
 2. Add/confirm a `current_status` style view to expose latest KPI/risk snapshot per machine.
 3. Add freshness fields (`last_event_time`, `last_ml_score_time`) for dashboard/Genie trust signals.
 4. Ensure KPI definitions are explicit and stable for both dashboard and Genie.

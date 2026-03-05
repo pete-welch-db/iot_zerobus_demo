@@ -9,6 +9,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Create semantic views for IoT demo.")
     parser.add_argument("--catalog", required=True)
     parser.add_argument("--schema", required=True)
+    parser.add_argument(
+        "--telemetry-live-window-hours",
+        type=int,
+        default=24,
+        help="Rolling window used by vw_machine_telemetry_live.",
+    )
     return parser.parse_args()
 
 
@@ -16,6 +22,15 @@ def main() -> None:
     args = parse_args()
     catalog = args.catalog
     schema = args.schema
+    telemetry_live_window_hours = max(1, int(args.telemetry_live_window_hours))
+    fault_pred_cols = {
+        c.lower() for c in spark.table(f"{catalog}.{schema}.ml_fault_predictions").columns
+    }
+
+    def _fault_col_or_default(column_name: str, fallback_sql: str) -> str:
+        if column_name.lower() in fault_pred_cols:
+            return column_name
+        return f"{fallback_sql} AS {column_name}"
 
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
 
@@ -41,8 +56,19 @@ def main() -> None:
           fault_code,
           iothub_device_id
         FROM {catalog}.{schema}.silver_machine_telemetry
-        WHERE event_time >= current_timestamp() - INTERVAL 2 HOURS
+        WHERE event_time >= current_timestamp() - INTERVAL {telemetry_live_window_hours} HOURS
         """
+    )
+
+    fault_horizon_cols = ",\n              ".join(
+        [
+            _fault_col_or_default("prob_fault_next_1h", "CAST(NULL AS DOUBLE)"),
+            _fault_col_or_default("predicted_fault_next_1h", "CAST(NULL AS BOOLEAN)"),
+            _fault_col_or_default("prob_fault_next_24h", "CAST(NULL AS DOUBLE)"),
+            _fault_col_or_default("predicted_fault_next_24h", "CAST(NULL AS BOOLEAN)"),
+            _fault_col_or_default("prob_fault_next_7d", "CAST(NULL AS DOUBLE)"),
+            _fault_col_or_default("predicted_fault_next_7d", "CAST(NULL AS BOOLEAN)"),
+        ]
     )
 
     spark.sql(
@@ -65,13 +91,27 @@ def main() -> None:
           WHERE rn = 1
         ),
         fault_pred_latest AS (
-          SELECT machine_id, event_time, prob_fault_next_5m, predicted_fault_next_5m, scored_at, inference_type, model_run_id
+          SELECT
+            machine_id,
+            event_time,
+            prob_fault_next_5m,
+            predicted_fault_next_5m,
+            prob_fault_next_1h,
+            predicted_fault_next_1h,
+            prob_fault_next_24h,
+            predicted_fault_next_24h,
+            prob_fault_next_7d,
+            predicted_fault_next_7d,
+            scored_at,
+            inference_type,
+            model_run_id
           FROM (
             SELECT
               machine_id,
               event_time,
               prob_fault_next_5m,
               predicted_fault_next_5m,
+              {fault_horizon_cols},
               scored_at,
               inference_type,
               model_run_id,
@@ -103,6 +143,12 @@ def main() -> None:
           COALESCE(f.prob_fault_next_5m, g.prob_fault_next_5m) AS prob_fault_next_5m,
           COALESCE(f.predicted_fault_next_5m, COALESCE(f.prob_fault_next_5m, g.prob_fault_next_5m) >= 0.5)
             AS predicted_fault_next_5m,
+          f.prob_fault_next_1h AS prob_fault_next_1h,
+          f.predicted_fault_next_1h AS predicted_fault_next_1h,
+          f.prob_fault_next_24h AS prob_fault_next_24h,
+          f.predicted_fault_next_24h AS predicted_fault_next_24h,
+          f.prob_fault_next_7d AS prob_fault_next_7d,
+          f.predicted_fault_next_7d AS predicted_fault_next_7d,
           a.inference_type AS anomaly_inference_type,
           f.inference_type AS fault_inference_type,
           a.model_run_id AS anomaly_model_run_id,
@@ -178,6 +224,13 @@ def main() -> None:
           h.quality_pct,
           h.anomaly_score,
           h.prob_fault_next_5m,
+          h.prob_fault_next_1h,
+          h.prob_fault_next_24h,
+          h.prob_fault_next_7d,
+          h.predicted_fault_next_5m,
+          h.predicted_fault_next_1h,
+          h.predicted_fault_next_24h,
+          h.predicted_fault_next_7d,
           h.anomaly_inference_type,
           h.fault_inference_type,
           h.anomaly_model_run_id,

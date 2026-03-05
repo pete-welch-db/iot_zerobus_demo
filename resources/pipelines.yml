@@ -1,19 +1,23 @@
 resources:
   pipelines:
     iot_telemetry_medallion:
-      name: iot_telemetry_medallion_${bundle.target}
-      target: ${var.schema}
-      catalog: ${var.catalog}
+      name: "[${bundle.target} ${workspace.current_user.short_name}] iot_telemetry_medallion_${bundle.target}"
+      target: iot_demo_${bundle.target}
+      catalog: welch
+      edition: ADVANCED
       serverless: true
       continuous: true
-      development: true
+      development: false
       channel: CURRENT
       photon: true
       libraries:
         - file:
-            path: ../databricks/dlt_pipeline.py
+            path: ../databricks/pipelines/dlt_pipeline.py
       configuration:
-        iot.catalog: ${var.catalog}
-        iot.schema: ${var.schema}
-        iot.raw_input_table: ${var.catalog}.${var.schema}.${var.raw_input_table}
-        iot.target_throughput_cpm: ${var.target_throughput_cpm}
+        iot.catalog: welch
+        iot.schema: iot_demo_${bundle.target}
+        iot.raw_input_table: welch.iot_demo_${bundle.target}.raw_iothub_messages
+        iot.target_throughput_cpm: "100"
+        spark.databricks.delta.optimizeWrite.enabled: "true"
+        spark.databricks.delta.autoCompact.enabled: "true"
+        pipelines.trigger.interval: "1 second"

@@ -1,4 +1,5 @@
 import argparse
+import time
 from pathlib import Path
 
 from generate_sas_token import generate_sas_token
@@ -46,7 +47,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     resource_uri = f"{args.iothub_host}/devices/{args.device_id}"
-    sas_token = generate_sas_token(resource_uri, args.device_key, args.ttl_seconds)
+    expiry_epoch = int(time.time()) + args.ttl_seconds
+    sas_token = generate_sas_token(resource_uri, args.device_key, expiry_epoch)
     content = TEMPLATE.format(
         wifi_ssid=args.wifi_ssid,
         wifi_password=args.wifi_password,
