@@ -374,6 +374,27 @@ void emitSerialCsv(const TelemetrySample& s) {
   Serial.println(flowRateLpm, 2);
 }
 
+void epochToIso8601(unsigned long epoch, char* buf, size_t bufLen) {
+  unsigned long s = epoch;
+  int sec  = s % 60; s /= 60;
+  int mn   = s % 60; s /= 60;
+  int hr   = s % 24; s /= 24;
+  int days = (int)s;
+  int year = 1970;
+  while (true) {
+    int diy = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) ? 366 : 365;
+    if (days < diy) break;
+    days -= diy;
+    year++;
+  }
+  int md[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+  if (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) md[1] = 29;
+  int month = 0;
+  while (days >= md[month]) { days -= md[month]; month++; }
+  snprintf(buf, bufLen, "%04d-%02d-%02dT%02d:%02d:%02dZ",
+           year, month + 1, days + 1, hr, mn, sec);
+}
+
 void publishMqttJson(const TelemetrySample& s) {
   if (WiFi.status() != WL_CONNECTED) {
     connectWifi();
@@ -394,7 +415,7 @@ void publishMqttJson(const TelemetrySample& s) {
   char* cur = curBuf;    while (*cur == ' ') cur++;
   char* hum = humBuf;    while (*hum == ' ') hum++;
 
-  char payload[512];
+  char payload[576];
   float loadPct = constrain(((float)s.throughput / 120.0) * 100.0, 0.0, 100.0);
   float voltageV = 230.0;
   float currentA = s.currentAmps;
@@ -415,26 +436,60 @@ void publishMqttJson(const TelemetrySample& s) {
   char* volt = voltBuf; while (*volt == ' ') volt++;
   char* pressure = pressureBuf; while (*pressure == ' ') pressure++;
   char* flow = flowBuf; while (*flow == ' ') flow++;
+
+  // NTP-synced device timestamp; falls back to null if NTP not yet available
+  char tsBuf[32];
+  bool hasTs = false;
+  unsigned long epoch = WiFi.getTime();
+  if (epoch > 0) {
+    epochToIso8601(epoch, tsBuf, sizeof(tsBuf));
+    hasTs = true;
+  }
+
   if (strcmp(s.faultCode, "NONE") == 0) {
-    snprintf(
-      payload, sizeof(payload),
-      "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,"
-      "\"rpm\":%d,\"current_amps\":%s,\"humidity_pct\":%s,"
-      "\"load_pct\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":%s,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,"
-      "\"state\":\"%s\",\"fault_code\":null,\"ts\":null}",
-      MACHINE_ID, vib, temp, s.throughput,
-      s.rpm, cur, hum, load, pkw, pf, volt, pressure, flow, s.state
-    );
+    if (hasTs) {
+      snprintf(
+        payload, sizeof(payload),
+        "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,"
+        "\"rpm\":%d,\"current_amps\":%s,\"humidity_pct\":%s,"
+        "\"load_pct\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":%s,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,"
+        "\"state\":\"%s\",\"fault_code\":null,\"ts\":\"%s\"}",
+        MACHINE_ID, vib, temp, s.throughput,
+        s.rpm, cur, hum, load, pkw, pf, volt, pressure, flow, s.state, tsBuf
+      );
+    } else {
+      snprintf(
+        payload, sizeof(payload),
+        "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,"
+        "\"rpm\":%d,\"current_amps\":%s,\"humidity_pct\":%s,"
+        "\"load_pct\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":%s,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,"
+        "\"state\":\"%s\",\"fault_code\":null,\"ts\":null}",
+        MACHINE_ID, vib, temp, s.throughput,
+        s.rpm, cur, hum, load, pkw, pf, volt, pressure, flow, s.state
+      );
+    }
   } else {
-    snprintf(
-      payload, sizeof(payload),
-      "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,"
-      "\"rpm\":%d,\"current_amps\":%s,\"humidity_pct\":%s,"
-      "\"load_pct\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":%s,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,"
-      "\"state\":\"%s\",\"fault_code\":\"%s\",\"ts\":null}",
-      MACHINE_ID, vib, temp, s.throughput,
-      s.rpm, cur, hum, load, pkw, pf, volt, pressure, flow, s.state, s.faultCode
-    );
+    if (hasTs) {
+      snprintf(
+        payload, sizeof(payload),
+        "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,"
+        "\"rpm\":%d,\"current_amps\":%s,\"humidity_pct\":%s,"
+        "\"load_pct\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":%s,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,"
+        "\"state\":\"%s\",\"fault_code\":\"%s\",\"ts\":\"%s\"}",
+        MACHINE_ID, vib, temp, s.throughput,
+        s.rpm, cur, hum, load, pkw, pf, volt, pressure, flow, s.state, s.faultCode, tsBuf
+      );
+    } else {
+      snprintf(
+        payload, sizeof(payload),
+        "{\"machine_id\":\"%s\",\"vibration_mm_s\":%s,\"temp_c\":%s,\"throughput_cpm\":%d,"
+        "\"rpm\":%d,\"current_amps\":%s,\"humidity_pct\":%s,"
+        "\"load_pct\":%s,\"power_kw\":%s,\"power_factor\":%s,\"voltage_v\":%s,\"pressure_bar\":%s,\"flow_rate_lpm\":%s,"
+        "\"state\":\"%s\",\"fault_code\":\"%s\",\"ts\":null}",
+        MACHINE_ID, vib, temp, s.throughput,
+        s.rpm, cur, hum, load, pkw, pf, volt, pressure, flow, s.state, s.faultCode
+      );
+    }
   }
 
   bool published = mqttClient.publish(mqttTopic, payload);

@@ -4,8 +4,7 @@ bundle:
 include:
   - resources/pipelines.yml
   - resources/jobs.yml
-  - resources/realtime_views_job.yml
-  - resources/apps.yml
+  # - resources/apps.yml  # temporarily excluded — app was deleted from workspace
 
 variables:
   catalog:
@@ -15,8 +14,8 @@ variables:
     description: Unity Catalog schema name
     default: iot_demo
   raw_input_table:
-    description: Zerobus/Lakeflow raw source table
-    default: raw_iothub_messages
+    description: Bronze table written by Zerobus bridge (typed telemetry + raw JSON + timestamps)
+    default: bronze_iot_telemetry
   target_throughput_cpm:
     description: Throughput target for performance KPI
     default: "100"
@@ -67,10 +66,13 @@ variables:
     default: continuous
   iothub_bridge_processing_time:
     description: Processing trigger interval for continuous IoT Hub bridge micro-batches
-    default: "5 seconds"
+    default: "1 second"
   iothub_bridge_max_records_per_batch:
     description: Max records processed per micro-batch to avoid OOM and smooth retries
     default: "5000"
+  iothub_bridge_realtime_checkpoint_interval:
+    description: Checkpoint frequency for realTime trigger in continuous mode
+    default: "5 minutes"
   iothub_bridge_backfill_run_mode:
     description: Explicit one-shot bridge mode for workflow backfill/sweep path
     default: available-now

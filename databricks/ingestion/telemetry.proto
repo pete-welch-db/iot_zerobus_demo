@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package iot_telemetry;
+
+message TelemetryRecord {
+  string machine_id = 1;
+  double vibration_mm_s = 2;
+  double temp_c = 3;
+  int32  throughput_cpm = 4;
+  int32  rpm = 5;
+  double current_amps = 6;
+  double humidity_pct = 7;
+  double load_pct = 8;
+  double power_kw = 9;
+  double power_factor = 10;
+  double voltage_v = 11;
+  double pressure_bar = 12;
+  double flow_rate_lpm = 13;
+  string state = 14;
+  string fault_code = 15;
+  string ts = 16;
+}

@@ -10,7 +10,7 @@ resources:
         - task_key: bridge_iothub_to_zerobus
           timeout_seconds: 0
           max_retries: 5
-          min_retry_interval_millis: 300000
+          min_retry_interval_millis: 60000
           retry_on_timeout: true
           spark_python_task:
             python_file: ../databricks/ingestion/iothub_to_zerobus_bridge.py
@@ -47,18 +47,63 @@ resources:
               - ${var.iothub_bridge_processing_time}
               - --max-records-per-batch
               - ${var.iothub_bridge_max_records_per_batch}
-          environment_key: zerobus
-      environments:
-        - environment_key: zerobus
-          spec:
-            environment_version: "2"
-            dependencies:
-              - databricks-zerobus-ingest-sdk
+              - --realtime-checkpoint-interval
+              - ${var.iothub_bridge_realtime_checkpoint_interval}
+          new_cluster:
+            spark_version: 16.4.x-scala2.12
+            node_type_id: Standard_D4ds_v5
+            num_workers: 0
+            data_security_mode: SINGLE_USER
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: local[*]
+              spark.databricks.streaming.realTimeMode.enabled: "true"
+            custom_tags:
+              ResourceClass: SingleNode
+            azure_attributes:
+              availability: ON_DEMAND_AZURE
+              first_on_demand: 1
+          libraries:
+            - pypi:
+                package: databricks-zerobus-ingest-sdk
 
-    iot_zerobus_orchestration:
-      name: iot_zerobus_orchestration
+    iot_orchestration:
+      name: iot_orchestration
       tasks:
+        - task_key: DLT_Pipeline_Continuous
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.iot_telemetry_medallion.id}
+            full_refresh: false
+        - task_key: ML_Anomaly_Scoring
+          depends_on:
+            - task_key: DLT_Pipeline_Continuous
+          spark_python_task:
+            python_file: ../databricks/ml/ml_anomaly_notebook.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+              - --inference-mode
+              - batch
+          environment_key: Default
+        - task_key: ML_Fault_Prediction
+          depends_on:
+            - task_key: DLT_Pipeline_Continuous
+          spark_python_task:
+            python_file: ../databricks/ml/ml_state_prediction_notebook.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+              - --inference-mode
+              - batch
+          environment_key: Default
         - task_key: Apply_Semantic_Views
+          depends_on:
+            - task_key: ML_Anomaly_Scoring
+            - task_key: ML_Fault_Prediction
           spark_python_task:
             python_file: ../databricks/semantic/apply_semantic_views.py
             parameters:
@@ -157,16 +202,6 @@ resources:
           max_retries: 3
           retry_on_timeout: true
           min_retry_interval_millis: 10000
-      email_notifications:
-        on_failure:
-          - pete.welch@databricks.com
-        on_duration_warning_threshold_exceeded:
-          - pete.welch@databricks.com
-      health:
-        rules:
-          - metric: RUN_DURATION_SECONDS
-            op: GREATER_THAN
-            value: 35
       tags:
         environment: ${bundle.target}
         pipeline: iot_lakebase_export

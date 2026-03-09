@@ -187,8 +187,8 @@ def main() -> None:
           FROM (
             SELECT
               t.*,
-              row_number() OVER (PARTITION BY machine_id ORDER BY event_time DESC) AS rn
-            FROM {catalog}.{schema}.silver_machine_telemetry t
+              row_number() OVER (PARTITION BY machine_id ORDER BY last_event_time DESC) AS rn
+            FROM {catalog}.{schema}.gold_machine_current_status t
           )
           WHERE rn = 1
         ),
@@ -204,7 +204,7 @@ def main() -> None:
         )
         SELECT
           t.machine_id,
-          t.event_time AS last_event_time,
+          t.last_event_time,
           t.state,
           t.vibration_mm_s,
           t.temp_c,
@@ -238,14 +238,24 @@ def main() -> None:
           h.anomaly_scored_at,
           h.fault_scored_at,
           h.last_ml_score_time,
-          CAST(unix_timestamp(current_timestamp()) - unix_timestamp(t.event_time) AS INT) AS telemetry_lag_seconds,
-          CAST((unix_timestamp(current_timestamp()) - unix_timestamp(t.event_time)) * 1000 AS BIGINT) AS telemetry_lag_ms,
           CAST(
-            unix_timestamp(current_timestamp()) - unix_timestamp(COALESCE(h.last_ml_score_time, t.event_time))
+            COALESCE(
+              t.telemetry_lag_seconds,
+              unix_timestamp(current_timestamp()) - unix_timestamp(t.last_event_time)
+            ) AS INT
+          ) AS telemetry_lag_seconds,
+          CAST(
+            COALESCE(
+              t.telemetry_lag_ms,
+              (unix_timestamp(current_timestamp()) - unix_timestamp(t.last_event_time)) * 1000
+            ) AS BIGINT
+          ) AS telemetry_lag_ms,
+          CAST(
+            unix_timestamp(current_timestamp()) - unix_timestamp(COALESCE(h.last_ml_score_time, t.last_event_time))
             AS INT
           ) AS ml_lag_seconds,
           CAST(
-            (unix_timestamp(current_timestamp()) - unix_timestamp(COALESCE(h.last_ml_score_time, t.event_time))) * 1000
+            (unix_timestamp(current_timestamp()) - unix_timestamp(COALESCE(h.last_ml_score_time, t.last_event_time))) * 1000
             AS BIGINT
           ) AS ml_lag_ms
         FROM latest_telemetry t

@@ -1,92 +1,15 @@
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
-from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType, TimestampType
 
 
 TARGET_THROUGHPUT_CPM = float(spark.conf.get("iot.target_throughput_cpm", "100"))
 
-# This table is expected to be populated by the Zerobus/Lakeflow connector.
-RAW_INPUT_TABLE = spark.conf.get("iot.raw_input_table", "raw_iothub_messages")
-
-
-telemetry_schema = StructType(
-    [
-        StructField("machine_id", StringType(), True),
-        StructField("vibration_mm_s", DoubleType(), True),
-        StructField("temp_c", DoubleType(), True),
-        StructField("throughput_cpm", IntegerType(), True),
-        StructField("rpm", IntegerType(), True),
-        StructField("current_amps", DoubleType(), True),
-        StructField("humidity_pct", DoubleType(), True),
-        StructField("load_pct", DoubleType(), True),
-        StructField("power_kw", DoubleType(), True),
-        StructField("power_factor", DoubleType(), True),
-        StructField("voltage_v", DoubleType(), True),
-        StructField("pressure_bar", DoubleType(), True),
-        StructField("flow_rate_lpm", DoubleType(), True),
-        StructField("state", StringType(), True),
-        StructField("fault_code", StringType(), True),
-        StructField("ts", StringType(), True),
-    ]
-)
+# Bronze table written directly by the Zerobus bridge (typed columns + raw_body + timestamps).
+BRONZE_TABLE = spark.conf.get("iot.raw_input_table", "bronze_iot_telemetry")
 
 
 @dp.table(
-    comment="Raw IoT Hub messages and transport metadata from Zerobus/Lakeflow source table.",
-    table_properties={"quality": "bronze"},
-)
-def bronze_iot_raw():
-    source_df = spark.readStream.table(RAW_INPUT_TABLE)
-    columns = set(source_df.columns)
-
-    # Support either Event Hubs envelope columns or already-normalized telemetry rows.
-    if {"body", "enqueued_time"}.issubset(columns):
-        return source_df.select(
-            F.col("body").cast("string").alias("raw_body"),
-            F.col("enqueued_time").cast(TimestampType()).alias("enqueued_time"),
-            F.col("system_properties").alias("system_properties"),
-            F.col("properties").alias("properties"),
-            F.current_timestamp().alias("ingest_ts"),
-        )
-
-    # Some environments can have a legacy raw table schema that is missing
-    # newly added telemetry fields. Fill absent columns with null so pipeline
-    # evolution remains backward-compatible.
-    def _col_or_null(name, cast_type):
-        if name in columns:
-            return F.col(name).cast(cast_type).alias(name)
-        return F.lit(None).cast(cast_type).alias(name)
-
-    payload_struct = F.struct(
-        _col_or_null("machine_id", "string"),
-        _col_or_null("vibration_mm_s", "double"),
-        _col_or_null("temp_c", "double"),
-        _col_or_null("throughput_cpm", "int"),
-        _col_or_null("rpm", "int"),
-        _col_or_null("current_amps", "double"),
-        _col_or_null("humidity_pct", "double"),
-        _col_or_null("load_pct", "double"),
-        _col_or_null("power_kw", "double"),
-        _col_or_null("power_factor", "double"),
-        _col_or_null("voltage_v", "double"),
-        _col_or_null("pressure_bar", "double"),
-        _col_or_null("flow_rate_lpm", "double"),
-        _col_or_null("state", "string"),
-        _col_or_null("fault_code", "string"),
-        _col_or_null("ts", "string"),
-    )
-
-    return source_df.select(
-        F.to_json(payload_struct).alias("raw_body"),
-        F.to_timestamp(F.col("ts")).alias("enqueued_time"),
-        F.lit(None).cast("map<string,string>").alias("system_properties"),
-        F.lit(None).cast("map<string,string>").alias("properties"),
-        F.current_timestamp().alias("ingest_ts"),
-    )
-
-
-@dp.table(
-    comment="Parsed telemetry with typed schema and quality constraints.",
+    comment="Cleaned telemetry with quality constraints. Reads directly from Zerobus-managed bronze table.",
     table_properties={"quality": "silver"},
 )
 @dp.expect("valid_state", "state IN ('RUN', 'STOPPED', 'FAULT')")
@@ -103,44 +26,51 @@ def bronze_iot_raw():
 @dp.expect("pressure_reasonable", "pressure_bar BETWEEN 0 AND 50")
 @dp.expect("flow_reasonable", "flow_rate_lpm BETWEEN 0 AND 1000")
 def silver_machine_telemetry():
-    parsed = spark.readStream.table("bronze_iot_raw").withColumn(
-        "parsed_json",
-        F.from_json(F.col("raw_body"), telemetry_schema),
-    )
+    bronze = spark.readStream.table(BRONZE_TABLE)
 
     return (
-        parsed.select(
+        bronze.select(
             F.coalesce(
-                F.to_timestamp(F.col("parsed_json.ts")),
-                F.col("enqueued_time"),
+                F.to_timestamp(F.col("ts")),
+                F.to_timestamp(F.col("iothub_enqueued_time")),
             ).alias("event_time"),
-            F.col("parsed_json.machine_id").alias("machine_id"),
-            F.col("parsed_json.vibration_mm_s").cast("double").alias("vibration_mm_s"),
-            F.col("parsed_json.temp_c").cast("double").alias("temp_c"),
-            F.col("parsed_json.throughput_cpm").cast("int").alias("throughput_cpm"),
-            F.coalesce(F.col("parsed_json.rpm").cast("int"), F.lit(0)).alias("rpm"),
-            F.coalesce(F.col("parsed_json.current_amps").cast("double"), F.lit(0.0)).alias("current_amps"),
-            F.coalesce(F.col("parsed_json.humidity_pct").cast("double"), F.lit(40.0)).alias("humidity_pct"),
+            F.col("machine_id"),
+            F.col("vibration_mm_s").cast("double"),
+            F.col("temp_c").cast("double"),
+            F.col("throughput_cpm").cast("int"),
+            F.coalesce(F.col("rpm").cast("int"), F.lit(0)).alias("rpm"),
+            F.coalesce(F.col("current_amps").cast("double"), F.lit(0.0)).alias("current_amps"),
+            F.coalesce(F.col("humidity_pct").cast("double"), F.lit(40.0)).alias("humidity_pct"),
             F.coalesce(
-                F.col("parsed_json.load_pct").cast("double"),
-                F.greatest(F.lit(0.0), F.least(F.lit(100.0), F.col("parsed_json.throughput_cpm") / F.lit(1.2))),
+                F.col("load_pct").cast("double"),
+                F.greatest(F.lit(0.0), F.least(F.lit(100.0), F.col("throughput_cpm") / F.lit(1.2))),
             ).alias("load_pct"),
             F.coalesce(
-                F.col("parsed_json.power_kw").cast("double"),
-                (F.col("parsed_json.current_amps").cast("double") * F.lit(0.365)).cast("double"),
+                F.col("power_kw").cast("double"),
+                (F.col("current_amps").cast("double") * F.lit(0.365)).cast("double"),
             ).alias("power_kw"),
-            F.coalesce(F.col("parsed_json.power_factor").cast("double"), F.lit(0.92)).alias("power_factor"),
-            F.coalesce(F.col("parsed_json.voltage_v").cast("double"), F.lit(230.0)).alias("voltage_v"),
-            F.coalesce(F.col("parsed_json.pressure_bar").cast("double"), F.lit(2.5)).alias("pressure_bar"),
-            F.coalesce(F.col("parsed_json.flow_rate_lpm").cast("double"), F.lit(40.0)).alias("flow_rate_lpm"),
-            F.col("parsed_json.state").cast("string").alias("state"),
-            F.col("parsed_json.fault_code").cast("string").alias("fault_code"),
-            F.coalesce(
-                F.col("system_properties.iothub-connection-device-id").cast("string"),
-                F.col("parsed_json.machine_id").cast("string"),
-            ).alias("iothub_device_id"),
-            F.col("enqueued_time"),
-            F.col("ingest_ts"),
+            F.coalesce(F.col("power_factor").cast("double"), F.lit(0.92)).alias("power_factor"),
+            F.coalesce(F.col("voltage_v").cast("double"), F.lit(230.0)).alias("voltage_v"),
+            F.coalesce(F.col("pressure_bar").cast("double"), F.lit(2.5)).alias("pressure_bar"),
+            F.coalesce(F.col("flow_rate_lpm").cast("double"), F.lit(40.0)).alias("flow_rate_lpm"),
+            F.col("state").cast("string"),
+            F.col("fault_code").cast("string"),
+            F.col("machine_id").alias("iothub_device_id"),
+            F.to_timestamp(F.col("iothub_enqueued_time")).alias("enqueued_time"),
+            F.to_timestamp(F.col("ingest_ts")).alias("ingest_ts"),
+            (
+                (F.unix_timestamp(F.to_timestamp(F.col("iothub_enqueued_time")))
+                 - F.unix_timestamp(F.coalesce(
+                     F.to_timestamp(F.col("ts")),
+                     F.to_timestamp(F.col("iothub_enqueued_time")),
+                 )))
+                * F.lit(1000)
+            ).cast("bigint").alias("device_to_hub_ms"),
+            (
+                (F.unix_timestamp(F.to_timestamp(F.col("ingest_ts")))
+                 - F.unix_timestamp(F.to_timestamp(F.col("iothub_enqueued_time"))))
+                * F.lit(1000)
+            ).cast("bigint").alias("hub_to_bridge_ms"),
         )
         .where("machine_id IS NOT NULL")
         .where("event_time IS NOT NULL")
@@ -221,4 +151,66 @@ def gold_machine_health_5m():
         F.greatest(F.lit(0.0), F.least(F.lit(1.0), anomaly_score * 0.9 + F.col("fault_rate") * 0.4)).alias(
             "prob_fault_next_5m"
         ),
+    )
+
+
+@dp.table(
+    comment="Real-time current machine status. Streaming table optimized for <5s telemetry freshness.",
+    table_properties={
+        "quality": "gold",
+        "delta.enableChangeDataFeed": "true",
+    },
+)
+def gold_machine_current_status():
+    silver = spark.readStream.table("silver_machine_telemetry").withWatermark("event_time", "0 seconds")
+
+    # Short windows keep updates near real-time while preserving streaming-table semantics.
+    latest_per_window = silver.groupBy(
+        "machine_id",
+        F.window("event_time", "10 seconds").alias("w"),
+    ).agg(
+        F.max("event_time").alias("last_event_time"),
+        F.max_by(F.col("state"), F.col("event_time")).alias("state"),
+        F.max_by(F.col("vibration_mm_s"), F.col("event_time")).alias("vibration_mm_s"),
+        F.max_by(F.col("temp_c"), F.col("event_time")).alias("temp_c"),
+        F.max_by(F.col("throughput_cpm"), F.col("event_time")).alias("throughput_cpm"),
+        F.max_by(F.col("rpm"), F.col("event_time")).alias("rpm"),
+        F.max_by(F.col("current_amps"), F.col("event_time")).alias("current_amps"),
+        F.max_by(F.col("humidity_pct"), F.col("event_time")).alias("humidity_pct"),
+        F.max_by(F.col("load_pct"), F.col("event_time")).alias("load_pct"),
+        F.max_by(F.col("power_kw"), F.col("event_time")).alias("power_kw"),
+        F.max_by(F.col("power_factor"), F.col("event_time")).alias("power_factor"),
+        F.max_by(F.col("voltage_v"), F.col("event_time")).alias("voltage_v"),
+        F.max_by(F.col("pressure_bar"), F.col("event_time")).alias("pressure_bar"),
+        F.max_by(F.col("flow_rate_lpm"), F.col("event_time")).alias("flow_rate_lpm"),
+        F.max_by(F.col("fault_code"), F.col("event_time")).alias("fault_code"),
+        F.max_by(F.col("iothub_device_id"), F.col("event_time")).alias("iothub_device_id"),
+    )
+
+    return latest_per_window.select(
+        F.col("machine_id"),
+        F.col("last_event_time"),
+        F.col("state"),
+        F.col("vibration_mm_s"),
+        F.col("temp_c"),
+        F.col("throughput_cpm"),
+        F.col("rpm"),
+        F.col("current_amps"),
+        F.col("humidity_pct"),
+        F.col("load_pct"),
+        F.col("power_kw"),
+        F.col("power_factor"),
+        F.col("voltage_v"),
+        F.col("pressure_bar"),
+        F.col("flow_rate_lpm"),
+        F.col("fault_code"),
+        F.col("iothub_device_id"),
+        (F.unix_timestamp(F.current_timestamp()) - F.unix_timestamp(F.col("last_event_time")))
+        .cast("int")
+        .alias("telemetry_lag_seconds"),
+        (
+            (F.unix_timestamp(F.current_timestamp()) - F.unix_timestamp(F.col("last_event_time"))) * F.lit(1000)
+        )
+        .cast("bigint")
+        .alias("telemetry_lag_ms"),
     )

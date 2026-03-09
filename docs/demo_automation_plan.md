@@ -60,8 +60,7 @@ flowchart LR
   - Validate essential bundle variables are non-empty.
 - Add `databricks/ops/validate_demo_outputs.py`:
   - Assert row-count thresholds after run:
-    - `raw_iothub_messages > 0`
-    - `bronze_iot_raw > 0`
+    - `bronze_iot_telemetry > 0`
     - `silver_machine_telemetry > 0`
   - Optional warning-only check for `gold_machine_health_5m` depending on watermark/window timing.
   - Print concise metrics for demo narration.

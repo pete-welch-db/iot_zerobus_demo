@@ -234,7 +234,7 @@ Follow `infra/azure_iot_hub_setup.md` to:
 - Unity Catalog enabled.
 - Serverless enabled for DLT/Jobs/SQL as applicable.
 - Zerobus/Lakeflow connection configured to write raw source table:
-  - `${catalog}.${schema}.raw_iothub_messages`
+  - `${catalog}.${schema}.bronze_iot_telemetry`
 - Workspace URL:
   - `https://adb-984752964297111.11.azuredatabricks.net/`
 - SQL warehouse endpoint:
@@ -351,7 +351,7 @@ The post-medallion job includes medallion sync, batch+realtime ML scoring, seman
 
 Tables:
 
-- Bronze: `bronze_iot_raw`
+- Bronze: `bronze_iot_telemetry` (written directly by Zerobus bridge)
 - Silver: `silver_machine_telemetry`
 - Gold: `gold_machine_health_5m`
 - ML outputs: `ml_anomaly_scores`, `ml_fault_predictions`
@@ -393,7 +393,7 @@ UC metric views:
 2. Fallback mode (if needed)
    - Python sender logs valid JSON with `machine_id`, metrics, `state`, `fault_code`, and UTC `ts`.
 3. Bronze ingest
-   - `bronze_iot_raw` receives records and transport metadata.
+   - `bronze_iot_telemetry` receives typed telemetry, raw JSON body, and timestamps from the Zerobus bridge.
 4. Silver quality
    - `silver_machine_telemetry` has typed fields and valid states.
 5. Gold KPIs

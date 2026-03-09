@@ -16,7 +16,7 @@ resources:
       configuration:
         iot.catalog: welch
         iot.schema: iot_demo_${bundle.target}
-        iot.raw_input_table: welch.iot_demo_${bundle.target}.raw_iothub_messages
+        iot.raw_input_table: ${var.catalog}.${var.schema}.${var.raw_input_table}
         iot.target_throughput_cpm: "100"
         spark.databricks.delta.optimizeWrite.enabled: "true"
         spark.databricks.delta.autoCompact.enabled: "true"

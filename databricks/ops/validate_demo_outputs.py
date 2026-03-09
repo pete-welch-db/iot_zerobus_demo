@@ -28,8 +28,7 @@ def main() -> None:
     s = args.schema
 
     required_positive = {
-        f"{c}.{s}.raw_iothub_messages": count_rows(f"{c}.{s}.raw_iothub_messages"),
-        f"{c}.{s}.bronze_iot_raw": count_rows(f"{c}.{s}.bronze_iot_raw"),
+        f"{c}.{s}.bronze_iot_telemetry": count_rows(f"{c}.{s}.bronze_iot_telemetry"),
         f"{c}.{s}.silver_machine_telemetry": count_rows(f"{c}.{s}.silver_machine_telemetry"),
         f"{c}.{s}.ml_anomaly_scores": count_rows(f"{c}.{s}.ml_anomaly_scores"),
         f"{c}.{s}.ml_fault_predictions": count_rows(f"{c}.{s}.ml_fault_predictions"),

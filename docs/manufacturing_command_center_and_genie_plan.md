@@ -89,7 +89,7 @@ This is a planning document only (no implementation in this step).
 2. Define fallback actions for each failure point (bridge, DLT, ML, dashboard/Genie query).
 
 ## Data Quality and SLA Targets (Demo)
-- Data arrival to `raw_iothub_messages`: < 1-2 minutes
+- Data arrival to `bronze_iot_telemetry`: < 1-2 minutes
 - Silver visibility after pipeline refresh: < 2-4 minutes
 - ML refresh after scoring run: < 5 minutes
 - Dashboard/Genie freshness indicator always shown

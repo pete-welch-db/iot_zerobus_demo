@@ -10,7 +10,7 @@
   "target": {
     "catalog": "{{uc.catalog}}",
     "schema": "{{uc.schema}}",
-    "table": "raw_iothub_messages"
+    "table": "bronze_iot_telemetry"
   },
   "options": {
     "starting_position": "latest",

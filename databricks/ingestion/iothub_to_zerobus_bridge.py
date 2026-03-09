@@ -54,13 +54,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--processing-time",
         default="10 seconds",
-        help="Processing trigger interval for continuous mode (default: 10 seconds).",
+        help="Processing trigger interval for available-now / fallback mode (default: 10 seconds).",
     )
     parser.add_argument(
         "--max-records-per-batch",
         type=int,
         default=BATCH_SIZE_LIMIT,
-        help=f"Maximum records to process per batch to avoid OOM (default: {BATCH_SIZE_LIMIT}).",
+        help=f"Maximum records per batch in available-now mode (default: {BATCH_SIZE_LIMIT}).",
+    )
+    parser.add_argument(
+        "--realtime-checkpoint-interval",
+        default="5 minutes",
+        help="Checkpoint frequency for realTime trigger in continuous mode (default: 5 minutes).",
     )
     return parser.parse_args()
 
@@ -99,7 +104,10 @@ def ensure_target_table(full_table_name: str) -> None:
           flow_rate_lpm DOUBLE,
           state STRING,
           fault_code STRING,
-          ts STRING
+          ts STRING,
+          raw_body STRING,
+          iothub_enqueued_time STRING,
+          ingest_ts STRING
         )
         """
     )
@@ -122,7 +130,7 @@ def parse_eventhubs_connection_string(connection_string: str) -> tuple[str, str]
     return bootstrap_servers, entity_path
 
 
-def build_source_dataframe(connection_string: str, starting_offsets: str):
+def build_source_dataframe(connection_string: str, starting_offsets: str, *, realtime_mode: bool = False):
     bootstrap_servers, topic = parse_eventhubs_connection_string(connection_string)
     telemetry_schema = StructType(
         [
@@ -145,21 +153,24 @@ def build_source_dataframe(connection_string: str, starting_offsets: str):
         ]
     )
 
-    kafka_df = (
+    reader = (
         spark.readStream.format("kafka")
         .option("kafka.bootstrap.servers", bootstrap_servers)
         .option("subscribe", topic)
         .option("startingOffsets", starting_offsets)
-        .option("maxOffsetsPerTrigger", 10000)
         .option("kafka.security.protocol", "SASL_SSL")
         .option("kafka.sasl.mechanism", "PLAIN")
         .option(
             "kafka.sasl.jaas.config",
             f'kafkashaded.org.apache.kafka.common.security.plain.PlainLoginModule required username="$ConnectionString" password="{connection_string}";',
         )
-        .load()
     )
+    if not realtime_mode:
+        reader = reader.option("maxOffsetsPerTrigger", 50000)
 
+    kafka_df = reader.load()
+
+    iso_fmt = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
     parsed_df = (
         kafka_df.select(
             F.col("value").cast("string").alias("raw_body"),
@@ -184,8 +195,11 @@ def build_source_dataframe(connection_string: str, starting_offsets: str):
             F.col("parsed_json.fault_code").cast("string").alias("fault_code"),
             F.coalesce(
                 F.col("parsed_json.ts").cast("string"),
-                F.date_format(F.col("kafka_timestamp"), "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"),
+                F.date_format(F.col("kafka_timestamp"), iso_fmt),
             ).alias("ts"),
+            F.col("raw_body"),
+            F.date_format(F.col("kafka_timestamp"), iso_fmt).alias("iothub_enqueued_time"),
+            F.date_format(F.current_timestamp(), iso_fmt).alias("ingest_ts"),
         )
         .where("machine_id IS NOT NULL")
     )
@@ -197,7 +211,112 @@ _RECORD_FIELDS = [
     "rpm", "current_amps", "humidity_pct",
     "load_pct", "power_kw", "power_factor", "voltage_v", "pressure_bar", "flow_rate_lpm",
     "state", "fault_code", "ts",
+    "raw_body", "iothub_enqueued_time", "ingest_ts",
 ]
+
+
+class ZerobusForeachWriter:
+    """Row-at-a-time writer for real-time mode.
+
+    Holds a persistent Zerobus stream per partition and calls
+    ``ingest_record()`` for each row (fire-and-forget), then flushes
+    and closes cleanly at partition boundary for durability.
+    Uses ``ack_callback`` to track durability acknowledgment progress.
+    """
+
+    def __init__(
+        self,
+        ingest_url: str,
+        workspace_url: str,
+        full_table_name: str,
+        client_id: str,
+        client_secret: str,
+    ):
+        self._ingest_url = ingest_url
+        self._workspace_url = workspace_url
+        self._full_table_name = full_table_name
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._stream = None
+        self._record_count = 0
+        self._ack_high_watermark = -1
+        self._first_ingest_time = None
+
+    def _on_ack(self, response) -> None:
+        """Callback invoked when Zerobus confirms durability up to an offset."""
+        self._ack_high_watermark = response.durability_ack_up_to_offset
+
+    def _ensure_stream(self) -> None:
+        if self._stream is not None:
+            return
+        from zerobus.sdk.shared import RecordType, StreamConfigurationOptions, TableProperties
+        from zerobus.sdk.sync import ZerobusSdk
+
+        LOGGER.info("Creating Zerobus stream for %s", self._full_table_name)
+        sdk = ZerobusSdk(self._ingest_url, unity_catalog_url=self._workspace_url)
+        table_props = TableProperties(self._full_table_name)
+        opts = StreamConfigurationOptions(
+            record_type=RecordType.JSON,
+            ack_callback=self._on_ack,
+        )
+        self._stream = sdk.create_stream(
+            self._client_id, self._client_secret, table_props, opts,
+        )
+
+    # -- ForeachWriter interface ------------------------------------------
+
+    def open(self, partition_id: int, epoch_id: int) -> bool:
+        try:
+            self._ensure_stream()
+            self._record_count = 0
+            self._ack_high_watermark = -1
+            self._first_ingest_time = None
+            return True
+        except Exception as e:
+            LOGGER.error("open() failed partition=%s epoch=%s: %s", partition_id, epoch_id, e)
+            return False
+
+    def process(self, row) -> None:
+        record = {f: row[f] for f in _RECORD_FIELDS}
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                self._stream.ingest_record(record)
+                self._record_count += 1
+                if self._first_ingest_time is None:
+                    self._first_ingest_time = time.monotonic()
+                return
+            except Exception as e:
+                if attempt >= MAX_RETRIES:
+                    LOGGER.error("ingest_record failed after %d retries: %s", MAX_RETRIES, e)
+                    return
+                backoff = min(INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1)), MAX_BACKOFF_SECONDS)
+                LOGGER.warning("ingest_record retry %d/%d: %s, backoff=%ds", attempt, MAX_RETRIES, e, backoff)
+                time.sleep(backoff)
+                if "connection" in str(e).lower() or "timeout" in str(e).lower():
+                    self._stream = None
+                    self._ensure_stream()
+
+    def close(self, error) -> None:
+        if error:
+            LOGGER.error("Partition closed with error: %s", error)
+        if self._stream is not None:
+            try:
+                self._stream.flush()
+                elapsed = time.monotonic() - self._first_ingest_time if self._first_ingest_time else 0
+                LOGGER.info(
+                    "Flushed %d records in %.3fs (ack watermark: %d).",
+                    self._record_count,
+                    elapsed,
+                    self._ack_high_watermark,
+                )
+            except Exception as e:
+                LOGGER.error("flush() failed: %s", e)
+            finally:
+                try:
+                    self._stream.close()
+                except Exception as e:
+                    LOGGER.warning("stream.close() failed: %s", e)
+                self._stream = None
 
 
 def make_batch_writer(
@@ -208,20 +327,15 @@ def make_batch_writer(
     client_secret: str,
     max_records_per_batch: int,
 ):
-    """
-    Create a batch writer with robust error handling and retry logic.
-    Uses connection pooling and health checks for "always on" operation.
-    """
+    """Fallback batch writer for available-now / non-real-time mode."""
     _cached = {}
     _metrics = {"total_batches": 0, "total_records": 0, "total_errors": 0, "total_retries": 0}
 
     def _get_stream(force_reconnect: bool = False):
-        """Get or create Zerobus stream with connection health check."""
         from zerobus.sdk.shared import RecordType, StreamConfigurationOptions, TableProperties
         from zerobus.sdk.sync import ZerobusSdk
 
         if force_reconnect and "stream" in _cached:
-            LOGGER.info("Forcing Zerobus stream reconnection.")
             try:
                 _cached["stream"].close()
             except Exception as e:
@@ -229,20 +343,14 @@ def make_batch_writer(
             del _cached["stream"]
 
         if "stream" not in _cached:
-            LOGGER.info("Creating new Zerobus SDK stream for table %s", full_table_name)
-            try:
-                sdk = ZerobusSdk(ingest_url, unity_catalog_url=workspace_url)
-                table_properties = TableProperties(full_table_name)
-                options = StreamConfigurationOptions(record_type=RecordType.JSON)
-                _cached["stream"] = sdk.create_stream(client_id, client_secret, table_properties, options)
-                LOGGER.info("Zerobus stream created successfully.")
-            except Exception as e:
-                LOGGER.error("Failed to create Zerobus stream: %s", e)
-                raise
+            LOGGER.info("Creating Zerobus SDK stream for table %s", full_table_name)
+            sdk = ZerobusSdk(ingest_url, unity_catalog_url=workspace_url)
+            table_properties = TableProperties(full_table_name)
+            options = StreamConfigurationOptions(record_type=RecordType.JSON)
+            _cached["stream"] = sdk.create_stream(client_id, client_secret, table_properties, options)
         return _cached["stream"]
 
     def _ingest_with_retry(stream, records: list, attempt: int = 1) -> bool:
-        """Ingest records with exponential backoff retry logic."""
         try:
             for record in records:
                 stream.ingest_record(record)
@@ -251,82 +359,34 @@ def make_batch_writer(
         except Exception as e:
             _metrics["total_errors"] += 1
             if attempt >= MAX_RETRIES:
-                LOGGER.error(
-                    "Failed to ingest batch after %d attempts: %s. Skipping batch to prevent stream failure.",
-                    MAX_RETRIES, e
-                )
+                LOGGER.error("Failed to ingest batch after %d attempts: %s.", MAX_RETRIES, e)
                 return False
-            
             backoff = min(INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1)), MAX_BACKOFF_SECONDS)
-            LOGGER.warning(
-                "Ingestion failed (attempt %d/%d): %s. Retrying in %d seconds...",
-                attempt, MAX_RETRIES, e, backoff
-            )
+            LOGGER.warning("Ingestion retry %d/%d: %s, backoff=%ds", attempt, MAX_RETRIES, e, backoff)
             _metrics["total_retries"] += 1
             time.sleep(backoff)
-            
-            # Reconnect on connection errors
             if "connection" in str(e).lower() or "timeout" in str(e).lower():
-                LOGGER.info("Connection error detected, forcing reconnect.")
                 stream = _get_stream(force_reconnect=True)
-            
             return _ingest_with_retry(stream, records, attempt + 1)
 
     def _write_batch(batch_df, batch_id: int) -> None:
-        """Process batch with error handling, size limiting, and monitoring."""
         start_time = time.time()
-        LOGGER.info("Processing IoT Hub batch_id=%s", batch_id)
         _metrics["total_batches"] += 1
-        
         try:
-            # Limit batch size to prevent OOM
-            record_count = batch_df.count()
-            if record_count > max_records_per_batch:
-                LOGGER.warning(
-                    "Batch size %d exceeds limit %d. Processing first %d records.",
-                    record_count, max_records_per_batch, max_records_per_batch
-                )
-                batch_df = batch_df.limit(max_records_per_batch)
-            
-            records = [
-                {f: row[f] for f in _RECORD_FIELDS}
-                for row in batch_df.collect()
-            ]
-            
+            records = [{f: row[f] for f in _RECORD_FIELDS} for row in batch_df.collect()]
+            if len(records) > max_records_per_batch:
+                LOGGER.warning("Batch %d exceeds limit %d. Truncating.", len(records), max_records_per_batch)
+                records = records[:max_records_per_batch]
             if not records:
-                LOGGER.info("Empty batch_id=%s, skipping.", batch_id)
                 return
-            
-            # Get stream and ingest with retry
             stream = _get_stream()
-            success = _ingest_with_retry(stream, records)
-            
-            if success:
+            if _ingest_with_retry(stream, records):
                 _metrics["total_records"] += len(records)
                 elapsed = time.time() - start_time
-                LOGGER.info(
-                    "Successfully ingested %d records to Zerobus for batch_id=%s in %.2fs (rate: %.1f rec/s). "
-                    "Total: %d batches, %d records, %d errors, %d retries.",
-                    len(records), batch_id, elapsed, len(records) / elapsed if elapsed > 0 else 0,
-                    _metrics["total_batches"], _metrics["total_records"],
-                    _metrics["total_errors"], _metrics["total_retries"]
-                )
-            else:
-                LOGGER.error(
-                    "Failed to ingest batch_id=%s after retries. Data may be lost. "
-                    "Check Zerobus connection and credentials.",
-                    batch_id
-                )
-        
+                LOGGER.info("Batch %s: %d records in %.2fs.", batch_id, len(records), elapsed)
         except Exception as e:
             _metrics["total_errors"] += 1
-            LOGGER.error(
-                "Unexpected error processing batch_id=%s: %s. Stream will continue. "
-                "Metrics: %d batches, %d records, %d errors.",
-                batch_id, e, _metrics["total_batches"], _metrics["total_records"], _metrics["total_errors"],
-                exc_info=True
-            )
-            # Don't raise - let stream continue for "always on" operation
+            LOGGER.error("Batch %s failed: %s", batch_id, e, exc_info=True)
 
     return _write_batch
 
@@ -336,9 +396,8 @@ def main() -> None:
 
     full_table_name = f"{args.catalog}.{args.schema}.{args.table}"
     LOGGER.info("Starting IoT Hub -> Zerobus bridge for table: %s", full_table_name)
-    LOGGER.info("Run mode: %s, Processing time: %s, Max records/batch: %d",
-                args.run_mode, args.processing_time, args.max_records_per_batch)
-    
+    LOGGER.info("Run mode: %s", args.run_mode)
+
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {args.catalog}.{args.schema}")
     ensure_target_table(full_table_name)
 
@@ -349,25 +408,47 @@ def main() -> None:
     workspace_url = normalize_workspace_url(args.workspace_url)
     ingest_url = args.ingest_url if args.ingest_url.startswith(("http://", "https://")) else f"https://{args.ingest_url}"
 
-    source_df = build_source_dataframe(iothub_connection, args.starting_offsets)
-    writer = make_batch_writer(
-        ingest_url=ingest_url,
-        workspace_url=workspace_url,
-        full_table_name=full_table_name,
-        client_id=client_id,
-        client_secret=client_secret,
-        max_records_per_batch=args.max_records_per_batch,
-    )
+    is_realtime = args.run_mode == "continuous"
+    source_df = build_source_dataframe(iothub_connection, args.starting_offsets, realtime_mode=is_realtime)
 
-    query_builder = source_df.writeStream.foreachBatch(writer).option("checkpointLocation", args.checkpoint_path)
-    
     if args.run_mode == "available-now":
         LOGGER.info("Starting bridge in available-now mode (one-shot sweep).")
-        query = query_builder.trigger(availableNow=True).start()
+        writer = make_batch_writer(
+            ingest_url=ingest_url,
+            workspace_url=workspace_url,
+            full_table_name=full_table_name,
+            client_id=client_id,
+            client_secret=client_secret,
+            max_records_per_batch=args.max_records_per_batch,
+        )
+        query = (
+            source_df.writeStream
+            .foreachBatch(writer)
+            .option("checkpointLocation", args.checkpoint_path)
+            .trigger(availableNow=True)
+            .start()
+        )
     else:
-        LOGGER.info("Starting bridge in CONTINUOUS mode with processing time %s for 'always on' operation.", args.processing_time)
-        query = query_builder.trigger(processingTime=args.processing_time).start()
-    
+        LOGGER.info(
+            "Starting bridge in continuous mode (processing time: %s).",
+            args.processing_time,
+        )
+        writer = make_batch_writer(
+            ingest_url=ingest_url,
+            workspace_url=workspace_url,
+            full_table_name=full_table_name,
+            client_id=client_id,
+            client_secret=client_secret,
+            max_records_per_batch=args.max_records_per_batch,
+        )
+        query = (
+            source_df.writeStream
+            .foreachBatch(writer)
+            .option("checkpointLocation", args.checkpoint_path)
+            .trigger(processingTime=args.processing_time)
+            .start()
+        )
+
     query.awaitTermination()
     LOGGER.info("IoT Hub -> Zerobus bridge run completed or terminated.")
 
