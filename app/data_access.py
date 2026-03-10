@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import logging
 import uuid
-from dataclasses import dataclass
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Generator, Optional
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-import psycopg2
-from psycopg2 import sql as psql
+import psycopg
+from psycopg import sql as psql
 from databricks import sql as dbsql
+from databricks.sdk import WorkspaceClient
 
 from config import AppConfig
+
+logger = logging.getLogger(__name__)
 
 APP_TZ = ZoneInfo("America/Detroit")
 
@@ -33,9 +38,63 @@ def _localize_timestamps(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# ── Lakebase connection factory (psycopg3 + SDK credential rotation) ──
+
+
+class LakebaseConnectionFactory:
+    """Creates psycopg3 connections with auto-rotating OAuth credentials.
+
+    Each call to ``connection()`` generates a fresh short-lived token via
+    the Databricks SDK, so expired credentials are never reused.
+    """
+
+    def __init__(self, instance_name: str, db_name: str, port: int = 5432):
+        self._w = WorkspaceClient()
+        self._instance_name = instance_name
+        self._db_name = db_name
+        self._port = port
+
+        instance = self._w.database.get_database_instance(name=instance_name)
+        self._host = instance.read_write_dns
+        self._user = self._w.current_user.me().user_name
+        logger.info(
+            "Lakebase factory: host=%s user=%s db=%s",
+            self._host, self._user, self._db_name,
+        )
+
+    def _generate_token(self) -> str:
+        cred = self._w.database.generate_database_credential(
+            request_id=str(uuid.uuid4()),
+            instance_names=[self._instance_name],
+        )
+        return cred.token
+
+    @contextmanager
+    def connection(self) -> Generator[psycopg.Connection, None, None]:
+        """Yield a fresh psycopg3 connection with a newly generated token."""
+        conn = psycopg.connect(
+            host=self._host,
+            port=self._port,
+            dbname=self._db_name,
+            user=self._user,
+            password=self._generate_token(),
+            sslmode="require",
+            connect_timeout=15,
+        )
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+
+# ── DataClients ──────────────────────────────────────────────────────
+
+
 @dataclass
 class DataClients:
     config: AppConfig
+    _lb_factory: Optional[LakebaseConnectionFactory] = field(default=None, init=False, repr=False)
+    _lb_available: Optional[bool] = field(default=None, init=False, repr=False)
 
     def query_sql(self, statement: str) -> pd.DataFrame:
         with dbsql.connect(
@@ -48,6 +107,8 @@ class DataClients:
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
         return _localize_timestamps(pd.DataFrame(rows, columns=cols))
+
+    # ── SQL Warehouse queries ─────────────────────────────────────────
 
     def query_metric_summary(self) -> pd.DataFrame:
         c = self.config.catalog
@@ -173,21 +234,12 @@ class DataClients:
 
         if self.lakebase_available():
             try:
-                conn = psycopg2.connect(
-                    host=self.config.lakebase_host,
-                    port=self.config.lakebase_port,
-                    dbname=self.config.lakebase_db,
-                    user=self.config.lakebase_user,
-                    password=self.config.lakebase_password,
-                    sslmode="require",
-                    connect_timeout=10,
-                )
-                try:
+                with self._get_lb_factory().connection() as conn:
                     with conn.cursor() as cur:
                         ref = self._resolve_table(cur, "machine_current_status")
                         if ref:
                             cur.execute(psql.SQL(
-                                "SELECT MAX(updated_at), COUNT(*) FROM {}.{}"
+                                "SELECT MAX(last_event_time), COUNT(*) FROM {}.{}"
                             ).format(psql.Identifier(ref[0]), psql.Identifier(ref[1])))
                             row = cur.fetchone()
                             if row and row[0]:
@@ -198,19 +250,35 @@ class DataClients:
                                 result["lb_latest_update"] = lb_ts
                                 result["lb_age_seconds"] = max(0, (now - lb_ts).total_seconds())
                                 result["lb_row_count"] = int(row[1])
-                finally:
-                    conn.close()
             except Exception as exc:
                 result["lb_error"] = str(exc)
 
         return result
 
+    # ── Lakebase connection management ────────────────────────────────
+
     def lakebase_available(self) -> bool:
-        return bool(
-            self.config.lakebase_host
-            and self.config.lakebase_user
-            and self.config.lakebase_password
-        )
+        if self._lb_available is not None:
+            return self._lb_available
+        if not self.config.lakebase_instance_name:
+            self._lb_available = False
+            return False
+        try:
+            self._get_lb_factory()
+            self._lb_available = True
+        except Exception as exc:
+            logger.warning("Lakebase unavailable: %s", exc)
+            self._lb_available = False
+        return self._lb_available
+
+    def _get_lb_factory(self) -> LakebaseConnectionFactory:
+        if self._lb_factory is None:
+            self._lb_factory = LakebaseConnectionFactory(
+                instance_name=self.config.lakebase_instance_name,
+                db_name=self.config.lakebase_db,
+                port=self.config.lakebase_port,
+            )
+        return self._lb_factory
 
     def _resolve_table(self, cur, table_name: str) -> Optional[tuple[str, str]]:
         cur.execute(
@@ -229,117 +297,56 @@ class DataClients:
             return None
         return row[0], row[1]
 
-    def _query_mirror_metadata(self, cur) -> pd.DataFrame:
-        table_ref = self._resolve_table(cur, "mirror_metadata")
-        if not table_ref:
-            raise RuntimeError(
-                "Lakebase table machine_current_status is missing, and mirror_metadata is also unavailable."
-            )
-        query = psql.SQL(
-            """
-            SELECT
-              instance_id,
-              last_run_at,
-              row_count,
-              source_watermark,
-              'mirror_metadata_fallback'::text AS source_kind
-            FROM {}.{}
-            ORDER BY last_run_at DESC
-            LIMIT 20
-            """
-        ).format(psql.Identifier(table_ref[0]), psql.Identifier(table_ref[1]))
-        cur.execute(query)
-        rows = cur.fetchall()
-        cols = [d[0] for d in cur.description]
-        return _localize_timestamps(pd.DataFrame(rows, columns=cols))
-
-    def _lakebase_connect(self) -> psycopg2.extensions.connection:
-        return psycopg2.connect(
-            host=self.config.lakebase_host,
-            port=self.config.lakebase_port,
-            dbname=self.config.lakebase_db,
-            user=self.config.lakebase_user,
-            password=self.config.lakebase_password,
-            sslmode="require",
-            connect_timeout=15,
-        )
+    # ── Lakebase machine queries ──────────────────────────────────────
 
     def query_lakebase_machines(self) -> pd.DataFrame:
-        """All machines with sensor data + line_name from dim_machine, one row per device."""
+        """All machines from the synced machine_current_status table (includes line_name)."""
         if not self.lakebase_available():
             return pd.DataFrame()
-        conn = self._lakebase_connect()
-        try:
+        with self._get_lb_factory().connection() as conn:
             with conn.cursor() as cur:
-                status_ref = self._resolve_table(cur, "machine_current_status")
-                if not status_ref:
+                ref = self._resolve_table(cur, "machine_current_status")
+                if not ref:
                     raise RuntimeError("machine_current_status table not found in Lakebase")
-                dim_ref = self._resolve_table(cur, "dim_machine")
-                if dim_ref:
-                    query = psql.SQL(
-                        """
-                        SELECT s.machine_id, s.state, s.last_event_time,
-                               s.telemetry_lag_ms, s.ml_lag_ms,
-                               s.temp_c, s.vibration_mm_s, s.throughput_cpm,
-                               s.rpm, s.current_amps, s.humidity_pct,
-                               s.load_pct, s.power_kw, s.power_factor,
-                               s.voltage_v, s.pressure_bar, s.flow_rate_lpm,
-                               s.oee_pct, s.anomaly_score, s.prob_fault_next_5m,
-                               s.updated_at, d.line_name
-                        FROM {s_schema}.{s_table} s
-                        LEFT JOIN {d_schema}.{d_table} d
-                          ON s.machine_id = d.machine_id
-                        ORDER BY s.machine_id
-                        """
-                    ).format(
-                        s_schema=psql.Identifier(status_ref[0]),
-                        s_table=psql.Identifier(status_ref[1]),
-                        d_schema=psql.Identifier(dim_ref[0]),
-                        d_table=psql.Identifier(dim_ref[1]),
-                    )
-                else:
-                    query = psql.SQL(
-                        """
-                        SELECT s.*, NULL::text AS line_name
-                        FROM {s_schema}.{s_table} s
-                        ORDER BY s.machine_id
-                        """
-                    ).format(
-                        s_schema=psql.Identifier(status_ref[0]),
-                        s_table=psql.Identifier(status_ref[1]),
-                    )
+                query = psql.SQL(
+                    """
+                    SELECT machine_id, state, last_event_time,
+                           telemetry_lag_ms, ml_lag_ms,
+                           temp_c, vibration_mm_s, throughput_cpm,
+                           rpm, current_amps, humidity_pct,
+                           load_pct, power_kw, power_factor,
+                           voltage_v, pressure_bar, flow_rate_lpm,
+                           oee_pct, anomaly_score, prob_fault_next_5m,
+                           line_name
+                    FROM {}.{}
+                    ORDER BY machine_id
+                    """
+                ).format(psql.Identifier(ref[0]), psql.Identifier(ref[1]))
                 cur.execute(query)
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
                 return _localize_timestamps(pd.DataFrame(rows, columns=cols))
-        finally:
-            conn.close()
 
     def query_lakebase_status(self) -> pd.DataFrame:
         if not self.lakebase_available():
             return pd.DataFrame()
-        conn = self._lakebase_connect()
-        try:
+        with self._get_lb_factory().connection() as conn:
             with conn.cursor() as cur:
-                table_ref = self._resolve_table(cur, "machine_current_status")
-                if not table_ref:
-                    return self._query_mirror_metadata(cur)
+                ref = self._resolve_table(cur, "machine_current_status")
+                if not ref:
+                    return pd.DataFrame()
                 query = psql.SQL(
                     """
-                    SELECT machine_id, state, prob_fault_next_5m, last_event_time, updated_at
+                    SELECT machine_id, state, prob_fault_next_5m, last_event_time
                     FROM {}.{}
-                    ORDER BY updated_at DESC
+                    ORDER BY last_event_time DESC
                     LIMIT 200
                     """
-                ).format(psql.Identifier(table_ref[0]), psql.Identifier(table_ref[1]))
+                ).format(psql.Identifier(ref[0]), psql.Identifier(ref[1]))
                 cur.execute(query)
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
                 return _localize_timestamps(pd.DataFrame(rows, columns=cols))
-        except psycopg2.OperationalError as exc:
-            raise RuntimeError(f"Lakebase connectivity/auth error: {exc}") from exc
-        finally:
-            conn.close()
 
     # ── Service Requests ──────────────────────────────────────────────
 
@@ -383,8 +390,7 @@ class DataClients:
         if not self.lakebase_available():
             raise RuntimeError("Lakebase is not configured")
         batch_id = uuid.uuid4().hex[:12]
-        conn = self._lakebase_connect()
-        try:
+        with self._get_lb_factory().connection() as conn:
             with conn.cursor() as cur:
                 ref = self._ensure_service_requests_table(cur)
                 for idx, mid in enumerate(machine_ids):
@@ -397,8 +403,6 @@ class DataClients:
                         (row_id, mid, priority, request_type, description, requestor),
                     )
             conn.commit()
-        finally:
-            conn.close()
         return batch_id
 
     def query_service_requests(
@@ -409,8 +413,7 @@ class DataClients:
     ) -> pd.DataFrame:
         if not self.lakebase_available():
             return pd.DataFrame()
-        conn = self._lakebase_connect()
-        try:
+        with self._get_lb_factory().connection() as conn:
             with conn.cursor() as cur:
                 ref = self._resolve_table(cur, "service_requests")
                 if not ref:
@@ -436,14 +439,11 @@ class DataClients:
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
                 return _localize_timestamps(pd.DataFrame(rows, columns=cols))
-        finally:
-            conn.close()
 
     def update_service_request_status(self, request_id: str, new_status: str) -> None:
         if not self.lakebase_available():
             raise RuntimeError("Lakebase is not configured")
-        conn = self._lakebase_connect()
-        try:
+        with self._get_lb_factory().connection() as conn:
             with conn.cursor() as cur:
                 ref = self._resolve_table(cur, "service_requests")
                 if not ref:
@@ -455,8 +455,6 @@ class DataClients:
                     (new_status, request_id),
                 )
             conn.commit()
-        finally:
-            conn.close()
 
     # ── AI-Generated Descriptions ─────────────────────────────────────
 
@@ -538,7 +536,6 @@ class DataClients:
         if df.empty or df.iloc[0]["description"] is None:
             raise RuntimeError("ai_query returned no result")
         raw = df.iloc[0]["description"]
-        # ai_query may return a string or a struct — extract the text
         if isinstance(raw, dict):
             raw = raw.get("text") or raw.get("candidates", [{}])[0].get("text", "")
         return str(raw).strip()

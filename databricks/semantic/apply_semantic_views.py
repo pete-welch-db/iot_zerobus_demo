@@ -297,10 +297,13 @@ def main() -> None:
           CAST(
             (unix_timestamp(current_timestamp()) - unix_timestamp(COALESCE(h.last_ml_score_time, t.last_event_time))) * 1000
             AS BIGINT
-          ) AS ml_lag_ms
+          ) AS ml_lag_ms,
+          d.line_name
         FROM latest_telemetry t
         LEFT JOIN latest_health h
           ON t.machine_id = h.machine_id
+        LEFT JOIN {catalog}.{schema}.dim_machine d
+          ON t.machine_id = d.machine_id
         """
     )
 

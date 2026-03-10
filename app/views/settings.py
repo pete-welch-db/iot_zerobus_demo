@@ -74,13 +74,9 @@ def _run_connectivity_check() -> tuple[bool, dict]:
     else:
         diagnostics["genie_status"] = "not configured"
 
-    if cfg.lakebase_host:
-        try:
-            lb_ip = socket.gethostbyname(cfg.lakebase_host)
-            diagnostics["lakebase_dns_ip"] = lb_ip
-            _append_debug(f"Lakebase DNS resolved {cfg.lakebase_host} -> {lb_ip}")
-        except Exception as exc:
-            diagnostics["lakebase_dns_error"] = str(exc)
+    if cfg.lakebase_instance_name:
+        diagnostics["lakebase_instance"] = cfg.lakebase_instance_name
+        _append_debug(f"Lakebase instance: {cfg.lakebase_instance_name}")
     else:
         diagnostics["lakebase_status"] = "not configured"
 
@@ -96,7 +92,7 @@ def render() -> None:
     c1, c2, c3 = st.columns(3)
     c1.metric("Workspace", "Connected" if cfg.workspace_host else "Not set")
     c2.metric("Genie Space", cfg.genie_space_id[:12] + "..." if len(cfg.genie_space_id) > 12 else cfg.genie_space_id or "Not set")
-    c3.metric("Lakebase", "Configured" if cfg.lakebase_host else "Not configured")
+    c3.metric("Lakebase", "Configured" if cfg.lakebase_instance_name else "Not configured")
 
     st.markdown("---")
 
@@ -137,6 +133,6 @@ def render() -> None:
             "genie_space_id": cfg.genie_space_id,
             "dashboard_url": cfg.dashboard_url[:60] + "..." if len(cfg.dashboard_url) > 60 else cfg.dashboard_url,
             "refresh_seconds": cfg.refresh_seconds,
-            "lakebase_host": cfg.lakebase_host or "(not set)",
+            "lakebase_instance": cfg.lakebase_instance_name or "(not set)",
             "lakebase_db": cfg.lakebase_db or "(not set)",
         })

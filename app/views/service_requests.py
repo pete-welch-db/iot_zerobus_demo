@@ -306,9 +306,12 @@ def render(clients: DataClients | None = None) -> None:
                 sr_type = st.selectbox(
                     "Type", ["PREVENTIVE", "CORRECTIVE", "INSPECTION", "CALIBRATION"], key="sr_new_type",
                 )
+            # Pre-fill from AI generation if available
+            if "sr_new_ai_desc" in st.session_state:
+                st.session_state["sr_new_desc"] = st.session_state.pop("sr_new_ai_desc")
             sr_desc = st.text_area(
                 "Description",
-                value=st.session_state.pop("sr_new_ai_desc", ""),
+                key="sr_new_desc",
                 placeholder="Describe the issue or maintenance needed...",
             )
             sr_requestor = st.text_input("Requestor", placeholder="Your name or email")

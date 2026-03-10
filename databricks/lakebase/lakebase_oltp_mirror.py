@@ -1,4 +1,9 @@
 """
+DEPRECATED: This script has been replaced by Databricks native Synced Tables.
+See databricks/lakebase/lakebase_synced_tables_setup.py for the replacement.
+Kept for rollback reference only — do not use in new deployments.
+
+Original description:
 Mirror near-real-time OLAP semantic outputs into Lakebase OLTP tables.
 
 Production Features:

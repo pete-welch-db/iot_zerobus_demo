@@ -243,7 +243,6 @@ def _render_machine_card(row):
         f'<span class="mx-mini-metric">Anomaly <b>{_fmt(row.get("anomaly_score"), 3)}</b></span>'
         f'<span class="mx-mini-metric">Fault Risk <b>{_fmt(prob, 3)}</b></span>'
         f'<span class="mx-mini-metric">Last Event <b>{_fmt_ts(row.get("last_event_time"))}</b></span>'
-        f'<span class="mx-mini-metric">Updated <b>{_fmt_ts(row.get("updated_at"))}</b></span>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -265,23 +264,15 @@ def render_summary(clients: DataClients) -> None:
     if df.empty:
         st.warning("Lakebase summary unavailable: no rows returned.")
         return
-    if "source_kind" in df.columns:
-        st.caption("Showing mirror_metadata fallback.")
-
     row_count = len(df)
     machine_count = (
-        int(df["machine_id"].nunique()) if "machine_id" in df.columns
-        else int(df["instance_id"].nunique()) if "instance_id" in df.columns else 0
+        int(df["machine_id"].nunique()) if "machine_id" in df.columns else 0
     )
     avg_risk = (
         float(df["prob_fault_next_5m"].astype(float).mean())
         if "prob_fault_next_5m" in df.columns else None
     )
-    freshness_field = (
-        "updated_at" if "updated_at" in df.columns
-        else "last_run_at" if "last_run_at" in df.columns else None
-    )
-    latest = _fmt_ts(df[freshness_field].max()) if freshness_field and freshness_field in df.columns else "n/a"
+    latest = _fmt_ts(df["last_event_time"].max()) if "last_event_time" in df.columns else "n/a"
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Rows", row_count)
@@ -534,9 +525,12 @@ def render(clients: DataClients | None = None) -> None:
                 sr_type = st.selectbox(
                     "Type", ["PREVENTIVE", "CORRECTIVE", "INSPECTION", "CALIBRATION"], key="sr_type",
                 )
+            # Pre-fill from AI generation if available
+            if "sr_ai_desc" in st.session_state:
+                st.session_state["sr_desc_field"] = st.session_state.pop("sr_ai_desc")
             sr_desc = st.text_area(
                 "Description",
-                value=st.session_state.pop("sr_ai_desc", ""),
+                key="sr_desc_field",
                 placeholder="Describe the issue or maintenance needed...",
             )
             sr_requestor = st.text_input("Requestor", placeholder="Your name or email")
@@ -574,7 +568,7 @@ def render(clients: DataClients | None = None) -> None:
                 )
                 st.success(f"Service request **{batch}** created for {len(sr_machines)} machine(s).")
                 # Clear form fields after successful submit
-                for key in ["sr_machines", "sr_priority", "sr_type", "sr_ai_desc"]:
+                for key in ["sr_machines", "sr_priority", "sr_type", "sr_desc_field"]:
                     st.session_state.pop(key, None)
                 st.rerun()
             except Exception as exc:
