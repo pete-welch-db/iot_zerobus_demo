@@ -214,3 +214,27 @@ def gold_machine_current_status():
         .cast("bigint")
         .alias("telemetry_lag_ms"),
     )
+
+
+# ── Deduplicated latest status for Lakebase CONTINUOUS sync ───────
+# gold_machine_current_status is a streaming table with 10-second windows,
+# so it accumulates multiple rows per machine_id.  This table uses
+# APPLY CHANGES (SCD Type 1) to keep exactly ONE row per machine_id,
+# always reflecting the latest event.  With CDF enabled, the Lakebase
+# synced table can run in CONTINUOUS mode for near-real-time updates.
+
+dp.create_streaming_table(
+    "gold_machine_latest_status",
+    comment="Deduplicated latest status per machine. Source for Lakebase CONTINUOUS sync.",
+    table_properties={
+        "quality": "gold",
+        "delta.enableChangeDataFeed": "true",
+    },
+)
+
+dp.apply_changes(
+    target="gold_machine_latest_status",
+    source="gold_machine_current_status",
+    keys=["machine_id"],
+    sequence_by=F.col("last_event_time"),
+)

@@ -97,6 +97,7 @@ class DataClients:
     _lb_available: Optional[bool] = field(default=None, init=False, repr=False)
     _table_ref_cache: dict = field(default_factory=dict, init=False, repr=False)
     _sr_table_ensured: bool = field(default=False, init=False, repr=False)
+    _ml_cache: Optional[tuple] = field(default=None, init=False, repr=False)  # (monotonic_ts, DataFrame)
 
     def query_sql(self, statement: str, parameters: dict | None = None) -> pd.DataFrame:
         with dbsql.connect(
@@ -314,10 +315,43 @@ class DataClients:
         self._table_ref_cache[table_name] = ref
         return ref
 
+    # ── ML enrichment cache (SQL Warehouse, 30s TTL) ────────────────
+
+    def _get_ml_enrichment(self) -> pd.DataFrame:
+        """Cached ML enrichment from SQL Warehouse (OEE, anomaly, fault risk, line_name).
+
+        The gold table synced to Lakebase via CONTINUOUS mode only has raw
+        telemetry.  ML scores and dim_machine line_name come from the enriched
+        view, cached here with a 30-second TTL since ML batch scores change
+        infrequently.
+        """
+        import time as _time
+        now = _time.monotonic()
+        if self._ml_cache and (now - self._ml_cache[0]) < 30:
+            return self._ml_cache[1]
+        c = self.config.catalog
+        s = self.config.schema
+        df = self.query_sql(
+            f"""
+            SELECT machine_id, line_name,
+                   oee_pct, availability_pct, performance_pct, quality_pct,
+                   anomaly_score, prob_fault_next_5m,
+                   anomaly_inference_type, fault_inference_type
+            FROM {c}.{s}.vw_machine_current_status
+            """
+        )
+        self._ml_cache = (now, df)
+        return df
+
     # ── Lakebase machine queries ──────────────────────────────────────
 
     def query_lakebase_machines(self) -> pd.DataFrame:
-        """All machines from the synced machine_current_status table (includes line_name)."""
+        """Real-time telemetry from Lakebase + cached ML enrichment from SQL Warehouse.
+
+        Lakebase is synced via CONTINUOUS mode from gold_machine_current_status
+        (near-real-time telemetry).  ML scores, OEE, and line_name are merged
+        from a cached SQL Warehouse query against the enriched view.
+        """
         if not self.lakebase_available():
             return pd.DataFrame()
         with self._get_lb_factory().connection() as conn:
@@ -328,13 +362,11 @@ class DataClients:
                 query = psql.SQL(
                     """
                     SELECT machine_id, state, last_event_time,
-                           telemetry_lag_ms, ml_lag_ms,
                            temp_c, vibration_mm_s, throughput_cpm,
                            rpm, current_amps, humidity_pct,
                            load_pct, power_kw, power_factor,
                            voltage_v, pressure_bar, flow_rate_lpm,
-                           oee_pct, anomaly_score, prob_fault_next_5m,
-                           line_name
+                           fault_code, iothub_device_id
                     FROM {}.{}
                     ORDER BY machine_id
                     """
@@ -342,7 +374,37 @@ class DataClients:
                 cur.execute(query)
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
-                return _localize_timestamps(pd.DataFrame(rows, columns=cols))
+                lb_df = _localize_timestamps(pd.DataFrame(rows, columns=cols))
+
+        if lb_df.empty:
+            return lb_df
+
+        # Compute telemetry lag client-side for accurate real-time display
+        # (the gold table's pre-computed lag reflects DLT write time, not read time)
+        if "last_event_time" in lb_df.columns and not lb_df["last_event_time"].empty:
+            now = pd.Timestamp.now(tz="UTC")
+            evt = pd.to_datetime(lb_df["last_event_time"], utc=True, errors="coerce")
+            lag_seconds = (now - evt).dt.total_seconds()
+            lb_df["telemetry_lag_ms"] = pd.to_numeric(lag_seconds * 1000, errors="coerce")
+        else:
+            lb_df["telemetry_lag_ms"] = None
+
+        # Merge ML enrichment from cached SQL Warehouse query
+        try:
+            ml_df = self._get_ml_enrichment()
+            if not ml_df.empty:
+                lb_df = lb_df.merge(ml_df, on="machine_id", how="left")
+            else:
+                logger.warning("ML enrichment returned empty DataFrame")
+        except Exception as exc:
+            logger.error("ML enrichment query failed: %s", exc, exc_info=True)
+        # Ensure expected columns exist even if ML enrichment failed or returned empty
+        for col in ["oee_pct", "anomaly_score", "prob_fault_next_5m", "line_name",
+                     "availability_pct", "performance_pct", "quality_pct"]:
+            if col not in lb_df.columns:
+                lb_df[col] = None
+
+        return lb_df
 
     def query_lakebase_status(self) -> pd.DataFrame:
         if not self.lakebase_available():
@@ -354,7 +416,7 @@ class DataClients:
                     return pd.DataFrame()
                 query = psql.SQL(
                     """
-                    SELECT machine_id, state, prob_fault_next_5m, last_event_time
+                    SELECT machine_id, state, last_event_time
                     FROM {}.{}
                     ORDER BY last_event_time DESC
                     LIMIT 200
@@ -480,16 +542,25 @@ class DataClients:
 
     # ── AI-Generated Descriptions ─────────────────────────────────────
 
+    _VALID_REQUEST_TYPES = frozenset({"PREVENTIVE", "CORRECTIVE", "INSPECTION", "CALIBRATION"})
+    _MACHINE_ID_RE = __import__("re").compile(r"^MC-\d{4}$")
+
     def generate_sr_description(
         self,
         machine_ids: list[str],
         request_type: str,
     ) -> str:
         """Use ai_query() to generate a service request description from live ML and sensor data."""
+        # Validate inputs (these come from UI dropdowns, not free text)
+        if request_type not in self._VALID_REQUEST_TYPES:
+            raise ValueError(f"Invalid request_type: {request_type}")
+        for mid in machine_ids:
+            if not self._MACHINE_ID_RE.match(mid):
+                raise ValueError(f"Invalid machine_id: {mid}")
+
         c = self.config.catalog
         s = self.config.schema
-        in_sql, all_params = self._build_in_clause(machine_ids, "mid")
-        all_params["req_type"] = request_type
+        in_list = ", ".join(f"'{mid}'" for mid in machine_ids)
         df = self.query_sql(
             f"""
             WITH machine_data AS (
@@ -521,7 +592,7 @@ class DataClients:
                   ELSE 'OK'
                 END AS current_status
               FROM {c}.{s}.vw_machine_current_status
-              WHERE machine_id IN {in_sql}
+              WHERE machine_id IN ({in_list})
             ),
             summary AS (
               SELECT CONCAT_WS(CHAR(10),
@@ -547,15 +618,14 @@ class DataClients:
               CONCAT(
                 'You are a manufacturing maintenance assistant writing a service request. ',
                 'Based on the machine conditions below, write a brief 2-3 sentence description ',
-                'explaining WHY this ', :req_type, ' service request is needed. ',
+                'explaining WHY this {request_type} service request is needed. ',
                 'Cite specific sensor readings, ML risk scores, and threshold violations. ',
-                'Be concise and factual — this will be read by a maintenance technician.\n\n',
+                'Be concise and factual — this will be read by a maintenance technician.\\n\\n',
                 machine_summary
               )
             ) AS description
             FROM summary
-            """,
-            parameters=all_params,
+            """
         )
         if df.empty or df.iloc[0]["description"] is None:
             raise RuntimeError("ai_query returned no result")

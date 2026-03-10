@@ -4,6 +4,12 @@ from __future__ import annotations
 import streamlit as st
 
 
+@st.cache_data(ttl=30, show_spinner=False)
+def _fetch_freshness(_clients) -> dict:
+    """Cached freshness query — runs at most once every 30 seconds."""
+    return _clients.query_pipeline_freshness()
+
+
 def _age_label(seconds: float | None) -> str:
     if seconds is None:
         return "n/a"
@@ -39,7 +45,7 @@ def render_freshness_sidebar() -> None:
         return
 
     try:
-        f = clients.query_pipeline_freshness()
+        f = _fetch_freshness(clients)
     except Exception:
         return
 

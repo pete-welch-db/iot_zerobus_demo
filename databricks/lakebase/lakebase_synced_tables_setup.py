@@ -1,21 +1,31 @@
 """Set up Lakebase synced tables for the IoT demo.
 
-Replaces the custom lakebase_oltp_mirror.py with Databricks-managed
-synced tables.  Snapshot mode syncs vw_machine_current_status (which
-already includes line_name via JOIN with dim_machine) into Lakebase
-automatically — no custom ETL code required.
+Supports two modes:
+  - CONTINUOUS: Syncs gold_machine_current_status (CDF-enabled streaming table)
+    for near-real-time telemetry (~15s latency). ML enrichment is handled app-side.
+  - SNAPSHOT:   Syncs vw_machine_current_status (view with ML + dim joins).
+    Requires scheduled refresh since views don't support CDF.
 
 Prerequisites:
   pip install databricks-sdk
 
 Usage:
-  # Dry run — show what would be created:
-  python lakebase_synced_tables_setup.py --dry-run
+  # Create CONTINUOUS synced table (recommended):
+  python lakebase_synced_tables_setup.py --mode continuous
 
-  # Create the synced table:
-  python lakebase_synced_tables_setup.py
+  # Create SNAPSHOT synced table (fallback):
+  python lakebase_synced_tables_setup.py --mode snapshot
 
-  # After verifying synced table is ONLINE, clean up old mirror tables:
+  # Delete existing synced table (before recreating with different mode):
+  python lakebase_synced_tables_setup.py --delete
+
+  # Check sync status:
+  python lakebase_synced_tables_setup.py --status
+
+  # Dry run:
+  python lakebase_synced_tables_setup.py --mode continuous --dry-run
+
+  # Clean up old mirror tables from public schema:
   python lakebase_synced_tables_setup.py --cleanup-old-tables
 """
 
@@ -43,6 +53,12 @@ SCHEMA = "iot_demo_dev"
 LAKEBASE_INSTANCE = "iot-demo-lakebase"
 LOGICAL_DATABASE = "iot_demo"
 
+# Source table depends on mode
+SOURCE_TABLES = {
+    "continuous": "gold_machine_latest_status",   # Deduplicated, CDF-enabled, near-real-time
+    "snapshot": "vw_machine_current_status",       # View with ML enrichment
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -52,7 +68,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--schema", default=SCHEMA)
     parser.add_argument("--lakebase-instance", default=LAKEBASE_INSTANCE)
     parser.add_argument("--logical-database", default=LOGICAL_DATABASE)
+    parser.add_argument(
+        "--mode",
+        choices=["continuous", "snapshot"],
+        default="continuous",
+        help="Sync mode: 'continuous' for real-time from gold table, "
+             "'snapshot' for periodic from enriched view (default: continuous).",
+    )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--delete",
+        action="store_true",
+        help="Delete existing synced table and drop Lakebase table.",
+    )
     parser.add_argument(
         "--cleanup-old-tables",
         action="store_true",
@@ -71,7 +99,13 @@ def create_synced_table(w: WorkspaceClient, args: argparse.Namespace) -> None:
     catalog = args.catalog
     schema = args.schema
     dest_name = f"{catalog}.{schema}.machine_current_status"
-    source_name = f"{catalog}.{schema}.vw_machine_current_status"
+    source_table = SOURCE_TABLES[args.mode]
+    source_name = f"{catalog}.{schema}.{source_table}"
+    policy = (
+        SyncedTableSchedulingPolicy.CONTINUOUS
+        if args.mode == "continuous"
+        else SyncedTableSchedulingPolicy.SNAPSHOT
+    )
 
     logger.info(
         f"{'[DRY RUN] Would create' if args.dry_run else 'Creating'} synced table:"
@@ -80,7 +114,7 @@ def create_synced_table(w: WorkspaceClient, args: argparse.Namespace) -> None:
     logger.info(f"  Dest UC:  {dest_name}")
     logger.info(f"  Instance: {args.lakebase_instance}")
     logger.info(f"  Database: {args.logical_database}")
-    logger.info(f"  Mode:     SNAPSHOT")
+    logger.info(f"  Mode:     {args.mode.upper()}")
 
     if args.dry_run:
         return
@@ -89,6 +123,7 @@ def create_synced_table(w: WorkspaceClient, args: argparse.Namespace) -> None:
         existing = w.database.get_synced_database_table(name=dest_name)
         state = existing.data_synchronization_status.detailed_state
         logger.info(f"Synced table already exists (state: {state}). Skipping create.")
+        logger.info("Use --delete first to recreate with a different mode.")
         return
     except Exception:
         pass
@@ -101,7 +136,7 @@ def create_synced_table(w: WorkspaceClient, args: argparse.Namespace) -> None:
             spec=SyncedTableSpec(
                 source_table_full_name=source_name,
                 primary_key_columns=["machine_id"],
-                scheduling_policy=SyncedTableSchedulingPolicy.SNAPSHOT,
+                scheduling_policy=policy,
                 create_database_objects_if_missing=True,
                 new_pipeline_spec=NewPipelineSpec(
                     storage_catalog=catalog,
@@ -113,6 +148,56 @@ def create_synced_table(w: WorkspaceClient, args: argparse.Namespace) -> None:
     logger.info(f"Created synced table: {result.name}")
 
 
+def delete_synced_table(w: WorkspaceClient, args: argparse.Namespace) -> None:
+    """Delete the synced table and drop the Lakebase Postgres table."""
+    import uuid
+
+    catalog = args.catalog
+    schema = args.schema
+    dest_name = f"{catalog}.{schema}.machine_current_status"
+
+    # Delete the UC synced table definition
+    logger.info(f"Deleting synced table: {dest_name}")
+    try:
+        w.database.delete_synced_database_table(name=dest_name)
+        logger.info("  Synced table deleted from Unity Catalog.")
+    except Exception as e:
+        logger.warning(f"  Could not delete synced table: {e}")
+
+    # Drop the Postgres table in Lakebase
+    logger.info("Dropping Lakebase Postgres table...")
+    try:
+        cred = w.database.generate_database_credential(
+            request_id=str(uuid.uuid4()),
+            instance_names=[args.lakebase_instance],
+        )
+        instance = w.database.get_database_instance(name=args.lakebase_instance)
+
+        import psycopg
+        conninfo = (
+            f"host={instance.read_write_dns} port=5432 "
+            f"dbname={args.logical_database} "
+            f"user={w.current_user.me().user_name} "
+            f"password={cred.token} sslmode=require"
+        )
+        with psycopg.connect(conninfo) as conn:
+            with conn.cursor() as cur:
+                # Try both possible schemas
+                for pg_schema in [args.schema, "public"]:
+                    try:
+                        cur.execute(
+                            f"DROP TABLE IF EXISTS {pg_schema}.machine_current_status CASCADE"
+                        )
+                        logger.info(f"  Dropped {pg_schema}.machine_current_status")
+                    except Exception as e:
+                        logger.warning(f"  Could not drop {pg_schema}.machine_current_status: {e}")
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"  Could not connect to Lakebase to drop table: {e}")
+
+    logger.info("Delete complete. You can now recreate with --mode continuous or --mode snapshot.")
+
+
 def check_status(w: WorkspaceClient, args: argparse.Namespace) -> None:
     """Poll the synced table status."""
     dest_name = f"{args.catalog}.{args.schema}.machine_current_status"
@@ -122,6 +207,9 @@ def check_status(w: WorkspaceClient, args: argparse.Namespace) -> None:
         logger.info(f"Synced table: {dest_name}")
         logger.info(f"  State:   {sync.detailed_state}")
         logger.info(f"  Message: {sync.message or 'n/a'}")
+        if hasattr(status, 'spec') and status.spec:
+            logger.info(f"  Source:  {status.spec.source_table_full_name}")
+            logger.info(f"  Policy:  {status.spec.scheduling_policy}")
     except Exception as e:
         logger.warning(f"Could not get status for {dest_name}: {e}")
 
@@ -177,6 +265,10 @@ def main() -> None:
         check_status(w, args)
         return
 
+    if args.delete:
+        delete_synced_table(w, args)
+        return
+
     if args.cleanup_old_tables:
         cleanup_old_tables(w, args)
         return
@@ -192,6 +284,17 @@ def main() -> None:
     logger.info("SETUP COMPLETE")
     logger.info("=" * 60)
     if not args.dry_run:
+        if args.mode == "continuous":
+            logger.info(
+                "CONTINUOUS mode: Lakebase will receive near-real-time updates (~15s)."
+            )
+            logger.info(
+                "ML enrichment (OEE, anomaly, fault risk) is handled app-side via cached SQL Warehouse query."
+            )
+        else:
+            logger.info(
+                "SNAPSHOT mode: Run --status to verify ONLINE, then schedule periodic refreshes."
+            )
         logger.info(
             "Once status is ONLINE, run with --cleanup-old-tables to drop "
             "the old mirror tables from the public schema."
