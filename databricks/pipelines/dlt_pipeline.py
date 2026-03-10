@@ -149,7 +149,7 @@ def gold_machine_health_5m():
         anomaly_score.alias("anomaly_score"),
         (anomaly_score >= 0.7).alias("is_anomaly"),
         F.greatest(F.lit(0.0), F.least(F.lit(1.0), anomaly_score * 0.9 + F.col("fault_rate") * 0.4)).alias(
-            "prob_fault_next_5m"
+            "rule_based_risk_score"
         ),
     )
 
@@ -162,7 +162,7 @@ def gold_machine_health_5m():
     },
 )
 def gold_machine_current_status():
-    silver = spark.readStream.table("silver_machine_telemetry").withWatermark("event_time", "0 seconds")
+    silver = spark.readStream.table("silver_machine_telemetry").withWatermark("event_time", "10 seconds")
 
     # Short windows keep updates near real-time while preserving streaming-table semantics.
     latest_per_window = silver.groupBy(

@@ -39,17 +39,25 @@ st.markdown(
     [data-testid="stSidebarNav"] {
         min-height: auto;
     }
+    [data-testid="stSidebarNavLink"][aria-selected="true"] {
+        background-color: rgba(255,54,33,0.08);
+        border-left: 3px solid #FF3621;
+    }
     [data-testid="stMetric"] {
         background: #fff;
-        border: 1px solid #e8eaed;
-        border-radius: 8px;
+        border: 1px solid #E2E8F0;
+        border-radius: 10px;
         padding: 0.5rem 0.75rem;
     }
     [data-testid="stExpander"] {
-        border: 1px solid #e8eaed;
-        border-radius: 8px;
+        border: 1px solid #E2E8F0;
+        border-radius: 10px;
     }
-    a { color: #ff3621; }
+    a { color: #FF3621; }
+    button[kind="primary"] {
+        background-color: #FF3621 !important;
+        border-color: #FF3621 !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,

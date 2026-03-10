@@ -130,8 +130,8 @@ resources:
             - task_key: Create_refresh_metric_views
           dashboard_task:
             subscription: {}
-            warehouse_id: 148ccb90800933a1
-            dashboard_id: 01f11755a5c31ce2ae7e3f1c7a514115
+            warehouse_id: ${var.sql_warehouse_id}
+            dashboard_id: ${var.dashboard_id}
       queue:
         enabled: true
       environments:

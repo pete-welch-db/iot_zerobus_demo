@@ -109,6 +109,7 @@ def build_mqtt_client() -> mqtt.Client:
     client.username_pw_set(MQTT_USERNAME, SAS_TOKEN)
     client.tls_set(cert_reqs=ssl.CERT_REQUIRED, tls_version=ssl.PROTOCOL_TLS_CLIENT)
     if os.getenv("TLS_INSECURE", "false").lower() == "true":
+        LOGGER.warning("TLS_INSECURE is enabled — server certificate validation is disabled. Do not use in production.")
         client.tls_insecure_set(True)
 
     def on_connect(_client: mqtt.Client, _userdata, _flags, rc: int, _properties=None) -> None:

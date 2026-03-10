@@ -2,8 +2,8 @@ resources:
   pipelines:
     iot_telemetry_medallion:
       name: "[${bundle.target} ${workspace.current_user.short_name}] iot_telemetry_medallion_${bundle.target}"
-      target: iot_demo_${bundle.target}
-      catalog: welch
+      target: ${var.schema}
+      catalog: ${var.catalog}
       edition: ADVANCED
       serverless: true
       continuous: true
@@ -14,8 +14,8 @@ resources:
         - file:
             path: ../databricks/pipelines/dlt_pipeline.py
       configuration:
-        iot.catalog: welch
-        iot.schema: iot_demo_${bundle.target}
+        iot.catalog: ${var.catalog}
+        iot.schema: ${var.schema}
         iot.raw_input_table: ${var.catalog}.${var.schema}.${var.raw_input_table}
         iot.target_throughput_cpm: "100"
         spark.databricks.delta.optimizeWrite.enabled: "true"

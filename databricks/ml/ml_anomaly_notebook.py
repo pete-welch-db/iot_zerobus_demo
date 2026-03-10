@@ -222,12 +222,15 @@ with mlflow.start_run(run_name=f"iot_anomaly_pipeline_{inference_mode}"):
             .where("_rn = 1")
             .drop("_rn")
         )
-        (
-            latest_df.write.mode("overwrite")
-            .option("overwriteSchema", "true")
-            .format("delta")
-            .saveAsTable(output_table)
-        )
+        latest_df.createOrReplaceTempView("_anomaly_latest")
+        spark.sql(f"CREATE TABLE IF NOT EXISTS {output_table} LIKE _anomaly_latest")
+        spark.sql(f"""
+            MERGE INTO {output_table} AS target
+            USING _anomaly_latest AS source
+            ON target.machine_id = source.machine_id
+            WHEN MATCHED THEN UPDATE SET *
+            WHEN NOT MATCHED THEN INSERT *
+        """)
         total_count = latest_df.count()
         machine_count = latest_df.select("machine_id").distinct().count()
         mlflow.log_metrics(

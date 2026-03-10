@@ -121,6 +121,9 @@ variables:
   app_title:
     description: Streamlit app title
     default: IoT Manufacturing Flow Break Command Center
+  dashboard_id:
+    description: AI/BI dashboard ID for refresh task and embed URL
+    default: "01f11755a5c31ce2ae7e3f1c7a514115"
   app_dashboard_url:
     description: Published AI/BI dashboard URL for app embed
     default: https://adb-984752964297111.11.azuredatabricks.net/embed/dashboardsv3/01f11755a5c31ce2ae7e3f1c7a514115?o=984752964297111

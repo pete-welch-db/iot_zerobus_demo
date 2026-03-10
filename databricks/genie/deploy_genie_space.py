@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
         default=(
             "IoT manufacturing operations assistant. Ask about machine health, "
             "OEE, fault risk predictions, anomaly detection, downtime analysis, "
-            "sensor trends, and pipeline latency across a 100+ machine fleet."
+            "sensor trends, pipeline latency, and service requests across a 100+ machine fleet."
         ),
     )
     parser.add_argument("--genie-space-id", default="")
@@ -148,6 +148,14 @@ telemetry_lag_ms: end-to-end time from device event to availability in the view 
 ml_lag_ms: time from event to ML scoring completion
 device_to_hub_ms: latency from device to Azure IoT Hub (silver_machine_telemetry only)
 hub_to_bridge_ms: latency from IoT Hub to Zerobus bridge (silver_machine_telemetry only)
+
+═══ SERVICE REQUESTS ═══
+
+Service requests (maintenance work orders) are managed in the Streamlit app and stored in Lakebase (PostgreSQL).
+They are NOT queryable from SQL here. If asked about service requests, explain that they are tracked
+in the Manufacturing Command Center application and include fields: machine_id, priority (CRITICAL/HIGH/MEDIUM/LOW),
+request_type (PREVENTIVE/CORRECTIVE/INSPECTION), status (OPEN/IN_PROGRESS/RESOLVED/CLOSED), and description.
+Direct the user to the Streamlit app for service request details.
 
 ═══ FAULT CODES ═══
 

@@ -95,18 +95,26 @@ class DataClients:
     config: AppConfig
     _lb_factory: Optional[LakebaseConnectionFactory] = field(default=None, init=False, repr=False)
     _lb_available: Optional[bool] = field(default=None, init=False, repr=False)
+    _table_ref_cache: dict = field(default_factory=dict, init=False, repr=False)
+    _sr_table_ensured: bool = field(default=False, init=False, repr=False)
 
-    def query_sql(self, statement: str) -> pd.DataFrame:
+    def query_sql(self, statement: str, parameters: dict | None = None) -> pd.DataFrame:
         with dbsql.connect(
             server_hostname=self.config.workspace_host.replace("https://", ""),
             http_path=self.config.sql_http_path,
             access_token=self.config.token,
         ) as conn:
             with conn.cursor() as cur:
-                cur.execute(statement)
+                cur.execute(statement, parameters=parameters)
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
         return _localize_timestamps(pd.DataFrame(rows, columns=cols))
+
+    def _build_in_clause(self, values: list[str], prefix: str) -> tuple[str, dict]:
+        """Build a parameterized IN clause. Returns (sql_fragment, params_dict)."""
+        params = {f"{prefix}{i}": v for i, v in enumerate(values)}
+        placeholders = ", ".join(f":{k}" for k in params)
+        return f"({placeholders})", params
 
     # ── SQL Warehouse queries ─────────────────────────────────────────
 
@@ -164,16 +172,20 @@ class DataClients:
         """Hop-by-hop latency stats from vw_pipeline_latency, filterable by device/state/line."""
         c = self.config.catalog
         s = self.config.schema
+        all_params: dict = {}
         filters = [f"device_ts >= current_timestamp() - INTERVAL {minutes} MINUTES"]
         if machine_ids:
-            ids_str = ",".join(f"'{m}'" for m in machine_ids)
-            filters.append(f"machine_id IN ({ids_str})")
+            in_sql, p = self._build_in_clause(machine_ids, "mid")
+            filters.append(f"machine_id IN {in_sql}")
+            all_params.update(p)
         if states:
-            st_str = ",".join(f"'{v}'" for v in states)
-            filters.append(f"state IN ({st_str})")
+            in_sql, p = self._build_in_clause(states, "st")
+            filters.append(f"state IN {in_sql}")
+            all_params.update(p)
         if line_names:
-            ln_str = ",".join(f"'{v}'" for v in line_names)
-            filters.append(f"line_name IN ({ln_str})")
+            in_sql, p = self._build_in_clause(line_names, "ln")
+            filters.append(f"line_name IN {in_sql}")
+            all_params.update(p)
         where = " AND ".join(filters)
         return self.query_sql(
             f"""
@@ -196,7 +208,8 @@ class DataClients:
             WHERE {where}
             GROUP BY machine_id
             ORDER BY machine_id
-            """
+            """,
+            parameters=all_params or None,
         )
 
     def query_pipeline_freshness(self) -> dict:
@@ -281,6 +294,8 @@ class DataClients:
         return self._lb_factory
 
     def _resolve_table(self, cur, table_name: str) -> Optional[tuple[str, str]]:
+        if table_name in self._table_ref_cache:
+            return self._table_ref_cache[table_name]
         cur.execute(
             """
             SELECT table_schema, table_name
@@ -295,7 +310,9 @@ class DataClients:
         row = cur.fetchone()
         if not row:
             return None
-        return row[0], row[1]
+        ref = (row[0], row[1])
+        self._table_ref_cache[table_name] = ref
+        return ref
 
     # ── Lakebase machine queries ──────────────────────────────────────
 
@@ -352,6 +369,10 @@ class DataClients:
 
     def _ensure_service_requests_table(self, cur) -> tuple[str, str]:
         """Create the table if missing and return its (schema, name) ref."""
+        if self._sr_table_ensured:
+            ref = self._table_ref_cache.get("service_requests")
+            if ref:
+                return ref
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS service_requests (
@@ -376,6 +397,7 @@ class DataClients:
         ref = self._resolve_table(cur, "service_requests")
         if not ref:
             raise RuntimeError("service_requests table could not be resolved after creation")
+        self._sr_table_ensured = True
         return ref
 
     def create_service_request(
@@ -466,7 +488,8 @@ class DataClients:
         """Use ai_query() to generate a service request description from live ML and sensor data."""
         c = self.config.catalog
         s = self.config.schema
-        ids_str = ",".join(f"'{m}'" for m in machine_ids)
+        in_sql, all_params = self._build_in_clause(machine_ids, "mid")
+        all_params["req_type"] = request_type
         df = self.query_sql(
             f"""
             WITH machine_data AS (
@@ -498,7 +521,7 @@ class DataClients:
                   ELSE 'OK'
                 END AS current_status
               FROM {c}.{s}.vw_machine_current_status
-              WHERE machine_id IN ({ids_str})
+              WHERE machine_id IN {in_sql}
             ),
             summary AS (
               SELECT CONCAT_WS(CHAR(10),
@@ -524,14 +547,15 @@ class DataClients:
               CONCAT(
                 'You are a manufacturing maintenance assistant writing a service request. ',
                 'Based on the machine conditions below, write a brief 2-3 sentence description ',
-                'explaining WHY this {request_type} service request is needed. ',
+                'explaining WHY this ', :req_type, ' service request is needed. ',
                 'Cite specific sensor readings, ML risk scores, and threshold violations. ',
                 'Be concise and factual — this will be read by a maintenance technician.\n\n',
                 machine_summary
               )
             ) AS description
             FROM summary
-            """
+            """,
+            parameters=all_params,
         )
         if df.empty or df.iloc[0]["description"] is None:
             raise RuntimeError("ai_query returned no result")

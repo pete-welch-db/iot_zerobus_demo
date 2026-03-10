@@ -140,38 +140,48 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
         if train_df.empty:
             raise ValueError("No rows available for fault model training after preprocessing.")
         if train_df["label_fault_next_5m"].nunique() < 2:
-            train_df.loc[train_df.index[: max(1, len(train_df) // 20)], "label_fault_next_5m"] = 1
+            print("WARNING: Only one class in training data. Skipping training, using last known model.")
+            try:
+                model_uri = _latest_training_run_model_uri()
+                model_run_id = model_uri.split("/")[1]
+                train_model = False
+            except ValueError:
+                raise ValueError(
+                    "Cannot train: only one class present and no prior model exists. "
+                    "Generate fault training data first with simulate_fleet_iothub.py --mode export-training."
+                )
 
-        X = train_df[feature_cols_all]
-        y = train_df["label_fault_next_5m"].astype(int)
+        if train_model:
+            X = train_df[feature_cols_all]
+            y = train_df["label_fault_next_5m"].astype(int)
 
-        preprocess = ColumnTransformer(
-            transformers=[
-                ("num", Pipeline([("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())]), feature_cols_num),
-                ("cat", Pipeline([("imputer", SimpleImputer(strategy="most_frequent")), ("onehot", OneHotEncoder(handle_unknown="ignore"))]), feature_cols_cat),
-            ]
-        )
-        clf = Pipeline([("preprocess", preprocess), ("model", LogisticRegression(max_iter=1000, class_weight="balanced"))])
-
-        with mlflow.start_run(run_name="iot_fault_training", nested=True) as train_run:
-            mlflow.set_tags({"task": "fault_training"})
-            clf.fit(X, y)
-            train_prob = clf.predict_proba(X)[:, 1]
-            auc = float(roc_auc_score(y, train_prob)) if y.nunique() > 1 else 0.5
-            ap = float(average_precision_score(y, train_prob)) if y.nunique() > 1 else 0.0
-            mlflow.log_params(
-                {
-                    "numeric_features": ",".join(feature_cols_num),
-                    "categorical_features": ",".join(feature_cols_cat),
-                    "model_type": "logistic_regression",
-                    "horizon_seconds": HORIZON_SECONDS,
-                    "train_rows": int(len(train_df)),
-                }
+            preprocess = ColumnTransformer(
+                transformers=[
+                    ("num", Pipeline([("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())]), feature_cols_num),
+                    ("cat", Pipeline([("imputer", SimpleImputer(strategy="most_frequent")), ("onehot", OneHotEncoder(handle_unknown="ignore"))]), feature_cols_cat),
+                ]
             )
-            mlflow.log_metrics({"roc_auc_train": auc, "avg_precision_train": ap})
-            mlflow.sklearn.log_model(clf, artifact_path=artifact_path)
-            model_run_id = train_run.info.run_id
-            model_uri = f"runs:/{model_run_id}/{artifact_path}"
+            clf = Pipeline([("preprocess", preprocess), ("model", LogisticRegression(max_iter=1000, class_weight="balanced"))])
+
+            with mlflow.start_run(run_name="iot_fault_training", nested=True) as train_run:
+                mlflow.set_tags({"task": "fault_training"})
+                clf.fit(X, y)
+                train_prob = clf.predict_proba(X)[:, 1]
+                auc = float(roc_auc_score(y, train_prob)) if y.nunique() > 1 else 0.5
+                ap = float(average_precision_score(y, train_prob)) if y.nunique() > 1 else 0.0
+                mlflow.log_params(
+                    {
+                        "numeric_features": ",".join(feature_cols_num),
+                        "categorical_features": ",".join(feature_cols_cat),
+                        "model_type": "logistic_regression",
+                        "horizon_seconds": HORIZON_SECONDS,
+                        "train_rows": int(len(train_df)),
+                    }
+                )
+                mlflow.log_metrics({"roc_auc_train": auc, "avg_precision_train": ap})
+                mlflow.sklearn.log_model(clf, artifact_path=artifact_path)
+                model_run_id = train_run.info.run_id
+                model_uri = f"runs:/{model_run_id}/{artifact_path}"
     else:
         model_uri = _latest_training_run_model_uri()
         model_run_id = model_uri.split("/")[1]
@@ -272,12 +282,15 @@ with mlflow.start_run(run_name=f"iot_fault_pipeline_{inference_mode}"):
             .where("_rn = 1")
             .drop("_rn")
         )
-        (
-            latest_df.write.mode("overwrite")
-            .option("overwriteSchema", "true")
-            .format("delta")
-            .saveAsTable(output_table)
-        )
+        latest_df.createOrReplaceTempView("_fault_latest")
+        spark.sql(f"CREATE TABLE IF NOT EXISTS {output_table} LIKE _fault_latest")
+        spark.sql(f"""
+            MERGE INTO {output_table} AS target
+            USING _fault_latest AS source
+            ON target.machine_id = source.machine_id
+            WHEN MATCHED THEN UPDATE SET *
+            WHEN NOT MATCHED THEN INSERT *
+        """)
         total_count = latest_df.count()
         machine_count = latest_df.select("machine_id").distinct().count()
         mlflow.log_metrics(

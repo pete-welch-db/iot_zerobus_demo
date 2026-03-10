@@ -149,8 +149,8 @@ def main() -> None:
           g.oee_pct,
           COALESCE(a.anomaly_score, g.anomaly_score) AS anomaly_score,
           COALESCE(a.is_anomaly, g.is_anomaly) AS is_anomaly,
-          COALESCE(f.prob_fault_next_5m, g.prob_fault_next_5m) AS prob_fault_next_5m,
-          COALESCE(f.predicted_fault_next_5m, COALESCE(f.prob_fault_next_5m, g.prob_fault_next_5m) >= 0.5)
+          COALESCE(f.prob_fault_next_5m, g.rule_based_risk_score) AS prob_fault_next_5m,
+          COALESCE(f.predicted_fault_next_5m, COALESCE(f.prob_fault_next_5m, g.rule_based_risk_score) >= 0.5)
             AS predicted_fault_next_5m,
           f.prob_fault_next_1h AS prob_fault_next_1h,
           f.predicted_fault_next_1h AS predicted_fault_next_1h,

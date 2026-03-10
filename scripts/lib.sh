@@ -90,8 +90,9 @@ stop_pipeline_resource() {
 
 sql_query() {
   local statement="$1"
-  databricks api post /api/2.0/sql/statements --json "$(cat <<EOF
-{"warehouse_id":"$WAREHOUSE_ID","statement":"$statement"}
-EOF
-)"
+  databricks api post /api/2.0/sql/statements --json "$(jq -n \
+    --arg wid "$WAREHOUSE_ID" \
+    --arg stmt "$statement" \
+    '{warehouse_id: $wid, statement: $stmt}'
+  )"
 }

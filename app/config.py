@@ -57,7 +57,10 @@ def load_config() -> AppConfig:
         os.getenv("DATABRICKS_HOST") or os.getenv("WORKSPACE_HOST") or ""
     )
     token = os.getenv("DATABRICKS_TOKEN", "") or get_auth_token()
-    warehouse_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "148ccb90800933a1")
+    warehouse_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
+    if not warehouse_id:
+        warehouse_id = "148ccb90800933a1"
+        logger.warning("DATABRICKS_WAREHOUSE_ID not set, using hardcoded default: %s", warehouse_id)
     sql_http_path = os.getenv(
         "DATABRICKS_HTTP_PATH",
         f"/sql/1.0/warehouses/{warehouse_id}",

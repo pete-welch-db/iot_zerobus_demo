@@ -54,6 +54,7 @@ def render() -> None:
         x="machine_id",
         y="prob_fault_next_5m",
         color="risk_band",
+        color_discrete_map={"CRITICAL": "#E53E3E", "WATCH": "#FF7033", "NORMAL": "#38A169"},
         title="Top Flow-Break Risk Machines",
         labels={"prob_fault_next_5m": "Risk of flow break in next 5m"},
     )
