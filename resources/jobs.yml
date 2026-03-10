@@ -164,17 +164,13 @@ resources:
               - --schema
               - ${var.schema}
               - --db-host
-              - "{{secrets/lakebase/postgres_hostname}}"
+              - ${var.lakebase_db_host}
               - --db-port
-              - "5432"
+              - ${var.lakebase_db_port}
               - --db-name
-              - "iot_demo"
-              - --secret-scope
-              - "lakebase"
-              - --user-secret-key
-              - "postgres_user"
-              - --password-secret-key
-              - "postgres_password"
+              - ${var.lakebase_db_name}
+              - --lakebase-instance-name
+              - ${var.lakebase_instance_id}
               - --instance-id
               - iot_demo_event_driven
               - --max-rows
@@ -198,6 +194,8 @@ resources:
           libraries:
             - pypi:
                 package: psycopg2-binary==2.9.9
+            - pypi:
+                package: requests
           timeout_seconds: 300
           max_retries: 3
           retry_on_timeout: true

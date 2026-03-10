@@ -1,5 +1,8 @@
 """
 Create or refresh curated semantic views for dashboard and Genie.
+
+Uses CREATE VIEW IF NOT EXISTS + ALTER VIEW AS to update query definitions
+without wiping Unity Catalog comments on views and columns.
 """
 
 import argparse
@@ -18,6 +21,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _upsert_view(full_name: str, select_sql: str) -> None:
+    """Create view if new, otherwise alter its query — preserving UC comments."""
+    spark.sql(f"CREATE VIEW IF NOT EXISTS {full_name} AS {select_sql}")
+    spark.sql(f"ALTER VIEW {full_name} AS {select_sql}")
+
+
 def main() -> None:
     args = parse_args()
     catalog = args.catalog
@@ -34,9 +43,9 @@ def main() -> None:
 
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
 
-    spark.sql(
+    _upsert_view(
+        f"{catalog}.{schema}.vw_machine_telemetry_live",
         f"""
-        CREATE OR REPLACE VIEW {catalog}.{schema}.vw_machine_telemetry_live AS
         SELECT
           event_time,
           machine_id,
@@ -57,7 +66,7 @@ def main() -> None:
           iothub_device_id
         FROM {catalog}.{schema}.silver_machine_telemetry
         WHERE event_time >= current_timestamp() - INTERVAL {telemetry_live_window_hours} HOURS
-        """
+        """,
     )
 
     fault_horizon_cols = ",\n              ".join(
@@ -71,9 +80,9 @@ def main() -> None:
         ]
     )
 
-    spark.sql(
+    _upsert_view(
+        f"{catalog}.{schema}.vw_machine_health",
         f"""
-        CREATE OR REPLACE VIEW {catalog}.{schema}.vw_machine_health AS
         WITH anomaly_latest AS (
           SELECT machine_id, event_time, anomaly_score, is_anomaly, scored_at, inference_type, model_run_id
           FROM (
@@ -164,9 +173,9 @@ def main() -> None:
         """
     )
 
-    spark.sql(
+    _upsert_view(
+        f"{catalog}.{schema}.dim_machine",
         f"""
-        CREATE OR REPLACE VIEW {catalog}.{schema}.dim_machine AS
         SELECT DISTINCT
           machine_id,
           CASE
@@ -176,12 +185,43 @@ def main() -> None:
             ELSE 'Unknown Line'
           END AS line_name
         FROM {catalog}.{schema}.silver_machine_telemetry
-        """
+        """,
     )
 
-    spark.sql(
+    _upsert_view(
+        f"{catalog}.{schema}.vw_pipeline_latency",
         f"""
-        CREATE OR REPLACE VIEW {catalog}.{schema}.vw_machine_current_status AS
+        WITH parsed AS (
+          SELECT
+            b.machine_id,
+            to_timestamp(b.ts)                    AS device_ts,
+            to_timestamp(b.iothub_enqueued_time)  AS iothub_ts,
+            to_timestamp(b.ingest_ts)             AS zerobus_ts,
+            b.state
+          FROM {catalog}.{schema}.bronze_iot_telemetry b
+          WHERE b.ts IS NOT NULL
+            AND b.iothub_enqueued_time IS NOT NULL
+            AND b.ingest_ts IS NOT NULL
+        )
+        SELECT
+          p.machine_id,
+          d.line_name,
+          p.state,
+          p.device_ts,
+          p.iothub_ts,
+          p.zerobus_ts,
+          ROUND(unix_millis(p.iothub_ts) - unix_millis(p.device_ts))    AS hop1_device_to_iothub_ms,
+          ROUND(unix_millis(p.zerobus_ts) - unix_millis(p.iothub_ts))   AS hop2_iothub_to_zerobus_ms,
+          ROUND(unix_millis(p.zerobus_ts) - unix_millis(p.device_ts))   AS total_device_to_zerobus_ms
+        FROM parsed p
+        LEFT JOIN {catalog}.{schema}.dim_machine d
+          ON p.machine_id = d.machine_id
+        """,
+    )
+
+    _upsert_view(
+        f"{catalog}.{schema}.vw_machine_current_status",
+        f"""
         WITH latest_telemetry AS (
           SELECT *
           FROM (

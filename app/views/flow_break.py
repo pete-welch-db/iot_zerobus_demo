@@ -2,7 +2,17 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from data_access import DataClients
+from views import freshness
+
+
+def _fmt_ts(val) -> str:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "--"
+    try:
+        ts = pd.Timestamp(val)
+        return ts.strftime("%-m/%-d %I:%M:%S %p") if not pd.isna(ts) else "--"
+    except Exception:
+        return str(val)
 
 
 def _risk_band(prob: float) -> str:
@@ -13,7 +23,9 @@ def _risk_band(prob: float) -> str:
     return "NORMAL"
 
 
-def render(clients: DataClients) -> None:
+def render() -> None:
+    freshness.render_freshness_bar()
+    clients = st.session_state.clients
     st.subheader("Flow Break Risk Command Center")
     try:
         df = clients.query_flow_break_signals()
@@ -47,23 +59,22 @@ def render(clients: DataClients) -> None:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    st.dataframe(
-        df[
-            [
-                "machine_id",
-                "state",
-                "prob_fault_next_5m",
-                "anomaly_score",
-                "throughput_cpm",
-                "vibration_mm_s",
-                "temp_c",
-                "current_amps",
-                "humidity_pct",
-                "telemetry_lag_ms",
-                "last_event_time",
-                "risk_band",
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True,
-    )
+    display = df[
+        [
+            "machine_id",
+            "state",
+            "prob_fault_next_5m",
+            "anomaly_score",
+            "throughput_cpm",
+            "vibration_mm_s",
+            "temp_c",
+            "current_amps",
+            "humidity_pct",
+            "telemetry_lag_ms",
+            "last_event_time",
+            "risk_band",
+        ]
+    ].copy()
+    if "last_event_time" in display.columns:
+        display["last_event_time"] = display["last_event_time"].apply(_fmt_ts)
+    st.dataframe(display, use_container_width=True, hide_index=True)

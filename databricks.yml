@@ -93,7 +93,7 @@ variables:
     default: iot-demo-lakebase
   lakebase_db_host:
     description: Lakebase endpoint host captured by provisioning
-    default: ""
+    default: "instance-d5f031cb-a61c-42d6-ac0a-c1c36d1f54dd.database.azuredatabricks.net"
   lakebase_db_port:
     description: Lakebase database port
     default: "5432"
@@ -111,7 +111,7 @@ variables:
     default: lakebase_db_password
   lakebase_instance_id:
     description: Lakebase instance identifier (captured during provisioning)
-    default: ""
+    default: "iot-demo-lakebase"
   lakebase_jdbc_url:
     description: JDBC URL for Lakebase OLTP mirror job
     default: ""

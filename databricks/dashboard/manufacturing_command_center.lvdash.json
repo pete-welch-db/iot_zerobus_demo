@@ -4,21 +4,85 @@
       "name": "ds_current_status",
       "displayName": "Current Status",
       "queryLines": [
-        "SELECT machine_id, state, last_event_time, DATE_TRUNC('HOUR', last_event_time) AS last_event_hour, oee_pct, anomaly_score, prob_fault_next_5m, prob_fault_next_1h, prob_fault_next_24h, prob_fault_next_7d, telemetry_lag_ms, ml_lag_ms, temp_c, vibration_mm_s, throughput_cpm, rpm, current_amps, humidity_pct, load_pct, power_kw, power_factor, voltage_v, pressure_bar, flow_rate_lpm FROM welch.iot_demo_dev.vw_machine_current_status"
+        "SELECT\n",
+        "  s.machine_id,\n",
+        "  d.line_name,\n",
+        "  s.state,\n",
+        "  s.last_event_time,\n",
+        "  DATE_TRUNC('HOUR', s.last_event_time) AS last_event_hour,\n",
+        "  s.oee_pct,\n",
+        "  s.anomaly_score,\n",
+        "  s.prob_fault_next_5m,\n",
+        "  s.prob_fault_next_1h,\n",
+        "  s.prob_fault_next_24h,\n",
+        "  s.prob_fault_next_7d,\n",
+        "  s.telemetry_lag_ms,\n",
+        "  s.ml_lag_ms,\n",
+        "  s.temp_c,\n",
+        "  s.vibration_mm_s,\n",
+        "  s.throughput_cpm,\n",
+        "  s.rpm,\n",
+        "  s.current_amps,\n",
+        "  s.humidity_pct,\n",
+        "  s.load_pct,\n",
+        "  s.power_kw,\n",
+        "  s.power_factor,\n",
+        "  s.voltage_v,\n",
+        "  s.pressure_bar,\n",
+        "  s.flow_rate_lpm\n",
+        "FROM\n",
+        "  welch.iot_demo_dev.vw_machine_current_status s\n",
+        "    LEFT JOIN welch.iot_demo_dev.dim_machine d\n",
+        "      ON s.machine_id = d.machine_id"
       ]
     },
     {
       "name": "ds_live_telemetry",
       "displayName": "Live Telemetry",
       "queryLines": [
-        "SELECT event_time, DATE_TRUNC('HOUR', event_time) AS event_hour, machine_id, state, temp_c, vibration_mm_s, rpm, current_amps, humidity_pct, throughput_cpm FROM welch.iot_demo_dev.vw_machine_telemetry_live"
+        "SELECT\n",
+        "  t.event_time,\n",
+        "  DATE_TRUNC('HOUR', t.event_time) AS event_hour,\n",
+        "  t.machine_id,\n",
+        "  d.line_name,\n",
+        "  t.state,\n",
+        "  t.temp_c,\n",
+        "  t.vibration_mm_s,\n",
+        "  t.rpm,\n",
+        "  t.current_amps,\n",
+        "  t.humidity_pct,\n",
+        "  t.throughput_cpm\n",
+        "FROM\n",
+        "  welch.iot_demo_dev.vw_machine_telemetry_live t\n",
+        "    LEFT JOIN welch.iot_demo_dev.dim_machine d\n",
+        "      ON t.machine_id = d.machine_id"
       ]
     },
     {
       "name": "ds_health_window",
       "displayName": "Health by Window",
       "queryLines": [
-        "SELECT machine_id, window_end, DATE_TRUNC('HOUR', window_end) AS window_hour, oee_pct, availability_pct, performance_pct, quality_pct, time_in_run_s, time_in_stopped_s, time_in_fault_s, anomaly_score, prob_fault_next_5m, prob_fault_next_1h, prob_fault_next_24h, prob_fault_next_7d FROM welch.iot_demo_dev.vw_machine_health"
+        "SELECT\n",
+        "  h.machine_id,\n",
+        "  d.line_name,\n",
+        "  h.window_end,\n",
+        "  DATE_TRUNC('HOUR', h.window_end) AS window_hour,\n",
+        "  h.oee_pct,\n",
+        "  h.availability_pct,\n",
+        "  h.performance_pct,\n",
+        "  h.quality_pct,\n",
+        "  h.time_in_run_s,\n",
+        "  h.time_in_stopped_s,\n",
+        "  h.time_in_fault_s,\n",
+        "  h.anomaly_score,\n",
+        "  h.prob_fault_next_5m,\n",
+        "  h.prob_fault_next_1h,\n",
+        "  h.prob_fault_next_24h,\n",
+        "  h.prob_fault_next_7d\n",
+        "FROM\n",
+        "  welch.iot_demo_dev.vw_machine_health h\n",
+        "    LEFT JOIN welch.iot_demo_dev.dim_machine d\n",
+        "      ON h.machine_id = d.machine_id"
       ]
     },
     {
@@ -50,10 +114,115 @@
       ]
     },
     {
-      "name": "ds_latency_monitor",
-      "displayName": "Latency Monitor",
+      "name": "ab2cd493",
+      "displayName": "Latency Analysis",
       "queryLines": [
-        "SELECT machine_id, telemetry_lag_ms, ml_lag_ms, CASE WHEN telemetry_lag_ms < 10000 THEN '✓ <10s' WHEN telemetry_lag_ms < 30000 THEN '⚠ 10-30s' ELSE '✗ >30s' END AS latency_status FROM welch.iot_demo_dev.vw_machine_current_status"
+        "SELECT\n",
+        "  b.machine_id,\n",
+        "  d.line_name,\n",
+        "  to_timestamp(b.ts) AS device_ts,\n",
+        "  to_timestamp(b.iothub_enqueued_time) AS iothub_ts,\n",
+        "  to_timestamp(b.ingest_ts) AS zerobus_ts,\n",
+        "  b.vibration_mm_s,\n",
+        "  b.temp_c,\n",
+        "  b.throughput_cpm,\n",
+        "  b.rpm,\n",
+        "  b.current_amps,\n",
+        "  b.humidity_pct,\n",
+        "  b.load_pct,\n",
+        "  b.power_kw,\n",
+        "  b.power_factor,\n",
+        "  b.voltage_v,\n",
+        "  b.pressure_bar,\n",
+        "  b.flow_rate_lpm,\n",
+        "  b.state,\n",
+        "  b.fault_code\n",
+        "FROM\n",
+        "  welch.iot_demo_dev.bronze_iot_telemetry b\n",
+        "    LEFT JOIN welch.iot_demo_dev.dim_machine d\n",
+        "      ON b.machine_id = d.machine_id\n",
+        "WHERE\n",
+        "  b.ts IS NOT NULL\n",
+        "  AND b.iothub_enqueued_time IS NOT NULL\n",
+        "  AND b.ingest_ts IS NOT NULL"
+      ],
+      "columns": [
+        {
+          "displayName": "Hop 1: Device → IoT Hub (ms)",
+          "description": "Latency from source device to Azure IoT Hub in milliseconds",
+          "expression": "ROUND((unix_millis(`iothub_ts`) - unix_millis(`device_ts`)))"
+        },
+        {
+          "displayName": "Hop 2: IoT Hub → ZeroBus (ms)",
+          "description": "Latency from Azure IoT Hub to ZeroBus ingestion in milliseconds",
+          "expression": "ROUND((unix_millis(`zerobus_ts`) - unix_millis(`iothub_ts`)))"
+        },
+        {
+          "displayName": "Total Latency (ms)",
+          "description": "End-to-end latency from device to ZeroBus in milliseconds",
+          "expression": "ROUND((unix_millis(`zerobus_ts`) - unix_millis(`device_ts`)))"
+        },
+        {
+          "displayName": "Latency Bucket",
+          "description": "Categorizes total latency into buckets for distribution analysis",
+          "expression": "CASE WHEN (unix_millis(`zerobus_ts`) - unix_millis(`device_ts`)) < 500 THEN '< 500ms' WHEN (unix_millis(`zerobus_ts`) - unix_millis(`device_ts`)) < 1000 THEN '500ms - 1s' WHEN (unix_millis(`zerobus_ts`) - unix_millis(`device_ts`)) < 5000 THEN '1s - 5s' WHEN (unix_millis(`zerobus_ts`) - unix_millis(`device_ts`)) < 60000 THEN '5s - 1m' ELSE '> 1m (Outlier)' END"
+        },
+        {
+          "displayName": "Is Outlier",
+          "description": "Flags records with total latency > 5s as outliers (well above p50 of 586ms)",
+          "expression": "CASE WHEN (unix_millis(`zerobus_ts`) - unix_millis(`device_ts`)) > 5000 THEN 'Outlier' ELSE 'Normal' END"
+        }
+      ]
+    },
+    {
+      "name": "8e3ad484",
+      "displayName": "Machine Current State",
+      "queryLines": [
+        "SELECT\n",
+        "  b.machine_id,\n",
+        "  d.line_name,\n",
+        "  to_timestamp(b.ts) AS event_time,\n",
+        "  to_timestamp(b.iothub_enqueued_time) AS iothub_time,\n",
+        "  to_timestamp(b.ingest_ts) AS ingest_time,\n",
+        "  b.state,\n",
+        "  b.fault_code,\n",
+        "  b.temp_c,\n",
+        "  b.vibration_mm_s,\n",
+        "  b.rpm,\n",
+        "  b.current_amps,\n",
+        "  b.humidity_pct,\n",
+        "  b.load_pct,\n",
+        "  b.power_kw,\n",
+        "  b.power_factor,\n",
+        "  b.voltage_v,\n",
+        "  b.pressure_bar,\n",
+        "  b.flow_rate_lpm,\n",
+        "  b.throughput_cpm\n",
+        "FROM\n",
+        "  welch.iot_demo_dev.bronze_iot_telemetry b\n",
+        "    LEFT JOIN welch.iot_demo_dev.dim_machine d\n",
+        "      ON b.machine_id = d.machine_id\n",
+        "WHERE\n",
+        "  b.ts IS NOT NULL\n",
+        "QUALIFY\n",
+        "  ROW_NUMBER() OVER (PARTITION BY b.machine_id ORDER BY b.ts DESC) = 1"
+      ],
+      "columns": [
+        {
+          "displayName": "Hop 1: Device → IoT Hub (ms)",
+          "description": "Latency from device to IoT Hub in milliseconds",
+          "expression": "ROUND((unix_millis(`iothub_time`) - unix_millis(`event_time`)))"
+        },
+        {
+          "displayName": "Hop 2: IoT Hub → ZeroBus (ms)",
+          "description": "Latency from IoT Hub to ZeroBus ingestion in milliseconds",
+          "expression": "ROUND((unix_millis(`ingest_time`) - unix_millis(`iothub_time`)))"
+        },
+        {
+          "displayName": "Total Latency (ms)",
+          "description": "End-to-end latency from device to ingestion in milliseconds",
+          "expression": "ROUND((unix_millis(`ingest_time`) - unix_millis(`event_time`)))"
+        }
       ]
     }
   ],
@@ -61,72 +230,24 @@
     {
       "name": "overview",
       "displayName": "Overview",
-      "layoutVersion": "GRID_V1",
-      "pageType": "PAGE_TYPE_CANVAS",
       "layout": [
         {
           "widget": {
             "name": "header_overview",
             "multilineTextboxSpec": {
               "lines": [
-                "# Manufacturing Command Center",
-                "**Operational + maintenance planning (5m, 1h, 24h, 7d)**"
+                "# Manufacturing Command Center\n",
+                "\n",
+                "# **Operational + maintenance planning**"
               ]
             }
           },
-          "position": { "x": 0, "y": 0, "width": 12, "height": 1 }
-        },
-        {
-          "widget": {
-            "name": "filter_machine_overview",
-            "queries": [
-              {
-                "name": "machine_q",
-                "query": {
-                  "datasetName": "ds_current_status",
-                  "fields": [ { "name": "machine_id", "expression": "`machine_id`" } ],
-                  "disaggregated": true
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "widgetType": "filter-multi-select",
-              "encodings": {
-                "fields": [
-                  { "fieldName": "machine_id", "displayName": "Machine", "queryName": "machine_q" }
-                ]
-              },
-              "frame": { "showTitle": true, "title": "Machine" }
-            }
-          },
-          "position": { "x": 0, "y": 1, "width": 3, "height": 1 }
-        },
-        {
-          "widget": {
-            "name": "filter_state_overview",
-            "queries": [
-              {
-                "name": "state_q",
-                "query": {
-                  "datasetName": "ds_current_status",
-                  "fields": [ { "name": "state", "expression": "`state`" } ],
-                  "disaggregated": true
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "widgetType": "filter-multi-select",
-              "encodings": {
-                "fields": [
-                  { "fieldName": "state", "displayName": "State", "queryName": "state_q" }
-                ]
-              },
-              "frame": { "showTitle": true, "title": "State" }
-            }
-          },
-          "position": { "x": 3, "y": 1, "width": 2, "height": 1 }
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
         },
         {
           "widget": {
@@ -136,7 +257,12 @@
                 "name": "time_q",
                 "query": {
                   "datasetName": "ds_current_status",
-                  "fields": [ { "name": "last_event_hour", "expression": "`last_event_hour`" } ],
+                  "fields": [
+                    {
+                      "name": "last_event_hour",
+                      "expression": "`last_event_hour`"
+                    }
+                  ],
                   "disaggregated": true
                 }
               }
@@ -146,13 +272,25 @@
               "widgetType": "filter-multi-select",
               "encodings": {
                 "fields": [
-                  { "fieldName": "last_event_hour", "displayName": "Event Hour", "queryName": "time_q" }
+                  {
+                    "fieldName": "last_event_hour",
+                    "displayName": "Event Hour",
+                    "queryName": "time_q"
+                  }
                 ]
               },
-              "frame": { "showTitle": true, "title": "Date/Time (Hour)" }
+              "frame": {
+                "showTitle": true,
+                "title": "Date/Time (Hour)"
+              }
             }
           },
-          "position": { "x": 5, "y": 1, "width": 3, "height": 1 }
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 1
+          }
         },
         {
           "widget": {
@@ -162,7 +300,12 @@
                 "name": "main_query",
                 "query": {
                   "datasetName": "ds_current_status",
-                  "fields": [ { "name": "fleet_oee_pct", "expression": "AVG(`oee_pct`)" } ],
+                  "fields": [
+                    {
+                      "name": "fleet_oee_pct",
+                      "expression": "AVG(`oee_pct`)"
+                    }
+                  ],
                   "disaggregated": false
                 }
               }
@@ -170,11 +313,24 @@
             "spec": {
               "version": 2,
               "widgetType": "counter",
-              "encodings": { "value": { "fieldName": "fleet_oee_pct", "displayName": "%" } },
-              "frame": { "showTitle": true, "title": "Fleet OEE %" }
+              "encodings": {
+                "value": {
+                  "fieldName": "fleet_oee_pct",
+                  "displayName": "%"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Fleet OEE %"
+              }
             }
           },
-          "position": { "x": 0, "y": 2, "width": 2, "height": 2 }
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
         },
         {
           "widget": {
@@ -184,7 +340,12 @@
                 "name": "main_query",
                 "query": {
                   "datasetName": "ds_current_status",
-                  "fields": [ { "name": "avg_risk_5m", "expression": "AVG(`prob_fault_next_5m`)" } ],
+                  "fields": [
+                    {
+                      "name": "avg_risk_5m",
+                      "expression": "AVG(`prob_fault_next_5m`)"
+                    }
+                  ],
                   "disaggregated": false
                 }
               }
@@ -192,11 +353,24 @@
             "spec": {
               "version": 2,
               "widgetType": "counter",
-              "encodings": { "value": { "fieldName": "avg_risk_5m", "displayName": "5m" } },
-              "frame": { "showTitle": true, "title": "Avg Fault Risk (5m)" }
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_risk_5m",
+                  "displayName": "5m"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Fault Risk (5m)"
+              }
             }
           },
-          "position": { "x": 2, "y": 2, "width": 2, "height": 2 }
+          "position": {
+            "x": 2,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
         },
         {
           "widget": {
@@ -206,7 +380,12 @@
                 "name": "main_query",
                 "query": {
                   "datasetName": "ds_current_status",
-                  "fields": [ { "name": "avg_risk_24h", "expression": "AVG(`prob_fault_next_24h`)" } ],
+                  "fields": [
+                    {
+                      "name": "avg_risk_24h",
+                      "expression": "AVG(`prob_fault_next_24h`)"
+                    }
+                  ],
                   "disaggregated": false
                 }
               }
@@ -214,11 +393,24 @@
             "spec": {
               "version": 2,
               "widgetType": "counter",
-              "encodings": { "value": { "fieldName": "avg_risk_24h", "displayName": "24h" } },
-              "frame": { "showTitle": true, "title": "Avg Fault Risk (24h)" }
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_risk_24h",
+                  "displayName": "24h"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Fault Risk (24h)"
+              }
             }
           },
-          "position": { "x": 4, "y": 2, "width": 2, "height": 2 }
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
         },
         {
           "widget": {
@@ -228,7 +420,12 @@
                 "name": "main_query",
                 "query": {
                   "datasetName": "ds_current_status",
-                  "fields": [ { "name": "avg_risk_7d", "expression": "AVG(`prob_fault_next_7d`)" } ],
+                  "fields": [
+                    {
+                      "name": "avg_risk_7d",
+                      "expression": "AVG(`prob_fault_next_7d`)"
+                    }
+                  ],
                   "disaggregated": false
                 }
               }
@@ -236,11 +433,24 @@
             "spec": {
               "version": 2,
               "widgetType": "counter",
-              "encodings": { "value": { "fieldName": "avg_risk_7d", "displayName": "7d" } },
-              "frame": { "showTitle": true, "title": "Avg Fault Risk (7d)" }
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_risk_7d",
+                  "displayName": "7d"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Fault Risk (7d)"
+              }
             }
           },
-          "position": { "x": 6, "y": 2, "width": 2, "height": 2 }
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
         },
         {
           "widget": {
@@ -250,7 +460,12 @@
                 "name": "main_query",
                 "query": {
                   "datasetName": "ds_metric_freshness",
-                  "fields": [ { "name": "avg_lag", "expression": "AVG(`avg_telemetry_lag_ms`)" } ],
+                  "fields": [
+                    {
+                      "name": "avg_lag",
+                      "expression": "AVG(`avg_telemetry_lag_ms`)"
+                    }
+                  ],
                   "disaggregated": false
                 }
               }
@@ -258,11 +473,24 @@
             "spec": {
               "version": 2,
               "widgetType": "counter",
-              "encodings": { "value": { "fieldName": "avg_lag", "displayName": "ms" } },
-              "frame": { "showTitle": true, "title": "Avg Telemetry Lag" }
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_lag",
+                  "displayName": "ms"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Telemetry Lag"
+              }
             }
           },
-          "position": { "x": 8, "y": 2, "width": 2, "height": 2 }
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
         },
         {
           "widget": {
@@ -272,7 +500,12 @@
                 "name": "main_query",
                 "query": {
                   "datasetName": "ds_metric_freshness",
-                  "fields": [ { "name": "avg_lag", "expression": "AVG(`avg_ml_lag_ms`)" } ],
+                  "fields": [
+                    {
+                      "name": "avg_lag",
+                      "expression": "AVG(`avg_ml_lag_ms`)"
+                    }
+                  ],
                   "disaggregated": false
                 }
               }
@@ -280,11 +513,24 @@
             "spec": {
               "version": 2,
               "widgetType": "counter",
-              "encodings": { "value": { "fieldName": "avg_lag", "displayName": "ms" } },
-              "frame": { "showTitle": true, "title": "Avg ML Lag" }
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_lag",
+                  "displayName": "ms"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg ML Lag"
+              }
             }
           },
-          "position": { "x": 10, "y": 2, "width": 2, "height": 2 }
+          "position": {
+            "x": 10,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
         },
         {
           "widget": {
@@ -295,8 +541,14 @@
                 "query": {
                   "datasetName": "ds_current_status",
                   "fields": [
-                    { "name": "machine_id", "expression": "`machine_id`" },
-                    { "name": "prob_fault_next_7d", "expression": "`prob_fault_next_7d`" }
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "prob_fault_next_7d",
+                      "expression": "`prob_fault_next_7d`"
+                    }
                   ],
                   "disaggregated": true
                 }
@@ -306,13 +558,33 @@
               "version": 3,
               "widgetType": "bar",
               "encodings": {
-                "x": { "fieldName": "prob_fault_next_7d", "displayName": "Fault Risk (7d)", "scale": { "type": "quantitative" } },
-                "y": { "fieldName": "machine_id", "displayName": "Machine", "scale": { "type": "categorical" } }
+                "x": {
+                  "fieldName": "prob_fault_next_7d",
+                  "displayName": "Fault Risk (7d)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
               },
-              "frame": { "showTitle": true, "title": "Maintenance Priority Ranking (7d)" }
+              "frame": {
+                "showTitle": true,
+                "title": "Maintenance Priority Ranking (7d)"
+              }
             }
           },
-          "position": { "x": 0, "y": 4, "width": 6, "height": 4 }
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 4
+          }
         },
         {
           "widget": {
@@ -323,9 +595,18 @@
                 "query": {
                   "datasetName": "ds_health_window",
                   "fields": [
-                    { "name": "window_end", "expression": "`window_end`" },
-                    { "name": "machine_id", "expression": "`machine_id`" },
-                    { "name": "downtime_s", "expression": "`time_in_stopped_s` + `time_in_fault_s`" }
+                    {
+                      "name": "window_end",
+                      "expression": "`window_end`"
+                    },
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "downtime_s",
+                      "expression": "`time_in_stopped_s` + `time_in_fault_s`"
+                    }
                   ],
                   "disaggregated": true
                 }
@@ -335,78 +616,752 @@
               "version": 3,
               "widgetType": "bar",
               "encodings": {
-                "x": { "fieldName": "window_end", "displayName": "Window End", "scale": { "type": "temporal" } },
-                "y": { "fieldName": "downtime_s", "displayName": "Downtime (s)", "scale": { "type": "quantitative" } },
-                "color": { "fieldName": "machine_id", "displayName": "Machine", "scale": { "type": "categorical" } }
+                "x": {
+                  "fieldName": "window_end",
+                  "displayName": "Window End",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "downtime_s",
+                  "displayName": "Downtime (s)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
               },
-              "frame": { "showTitle": true, "title": "Downtime by Window" }
+              "frame": {
+                "showTitle": true,
+                "title": "Downtime by Window"
+              }
             }
           },
-          "position": { "x": 6, "y": 4, "width": 6, "height": 4 }
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_machine",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d8872127fa3a8387e0248ccbf_machine_id",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "machine_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212aca9bd7a8c1ded77cb_machine_id",
+                "query": {
+                  "datasetName": "ds_health_window",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "machine_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212be9f874b6d0e0615e6_machine_id",
+                "query": {
+                  "datasetName": "ds_metric_freshness",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "machine_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Machine",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "machine_id",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d8872127fa3a8387e0248ccbf_machine_id"
+                  },
+                  {
+                    "fieldName": "machine_id",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212aca9bd7a8c1ded77cb_machine_id"
+                  },
+                  {
+                    "fieldName": "machine_id",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212be9f874b6d0e0615e6_machine_id"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_line",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d8872127fa3a8387e0248ccbf_line_name",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    {
+                      "name": "line_name",
+                      "expression": "`line_name`"
+                    },
+                    {
+                      "name": "line_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212aca9bd7a8c1ded77cb_line_name",
+                "query": {
+                  "datasetName": "ds_health_window",
+                  "fields": [
+                    {
+                      "name": "line_name",
+                      "expression": "`line_name`"
+                    },
+                    {
+                      "name": "line_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Line Name",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "line_name",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d8872127fa3a8387e0248ccbf_line_name"
+                  },
+                  {
+                    "fieldName": "line_name",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212aca9bd7a8c1ded77cb_line_name"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_state",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d8872127fa3a8387e0248ccbf_state",
+                "query": {
+                  "datasetName": "ds_current_status",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "state_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "State",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "state",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d8872127fa3a8387e0248ccbf_state"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 1
+          }
         }
-      ]
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
     },
     {
       "name": "telemetry_trends",
       "displayName": "Telemetry Trends",
-      "layoutVersion": "GRID_V1",
-      "pageType": "PAGE_TYPE_CANVAS",
       "layout": [
         {
-          "widget": { "name": "header_trends", "multilineTextboxSpec": { "lines": [ "## Telemetry Trends" ] } },
-          "position": { "x": 0, "y": 0, "width": 12, "height": 1 }
+          "widget": {
+            "name": "header_trends",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Telemetry Trends"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
         },
         {
           "widget": {
             "name": "temp_trend",
-            "queries": [{ "name": "main_query", "query": { "datasetName": "ds_live_telemetry", "fields": [ { "name": "event_time", "expression": "`event_time`" }, { "name": "machine_id", "expression": "`machine_id`" }, { "name": "temp_c", "expression": "`temp_c`" } ], "disaggregated": true } }],
-            "spec": { "version": 3, "widgetType": "line", "encodings": { "x": { "fieldName": "event_time", "displayName": "Time", "scale": { "type": "temporal" } }, "y": { "fieldName": "temp_c", "displayName": "Temp C", "scale": { "type": "quantitative" } }, "color": { "fieldName": "machine_id", "displayName": "Machine", "scale": { "type": "categorical" } } }, "frame": { "showTitle": true, "title": "Temperature Trend" } }
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "event_time",
+                      "expression": "`event_time`"
+                    },
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "temp_c",
+                      "expression": "`temp_c`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_time",
+                  "displayName": "Time",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "temp_c",
+                  "displayName": "Temp C",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Temperature Trend"
+              }
+            }
           },
-          "position": { "x": 0, "y": 1, "width": 6, "height": 4 }
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 4
+          }
         },
         {
           "widget": {
             "name": "vibration_trend",
-            "queries": [{ "name": "main_query", "query": { "datasetName": "ds_live_telemetry", "fields": [ { "name": "event_time", "expression": "`event_time`" }, { "name": "machine_id", "expression": "`machine_id`" }, { "name": "vibration_mm_s", "expression": "`vibration_mm_s`" } ], "disaggregated": true } }],
-            "spec": { "version": 3, "widgetType": "line", "encodings": { "x": { "fieldName": "event_time", "displayName": "Time", "scale": { "type": "temporal" } }, "y": { "fieldName": "vibration_mm_s", "displayName": "Vibration mm/s", "scale": { "type": "quantitative" } }, "color": { "fieldName": "machine_id", "displayName": "Machine", "scale": { "type": "categorical" } } }, "frame": { "showTitle": true, "title": "Vibration Trend" } }
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "event_time",
+                      "expression": "`event_time`"
+                    },
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "vibration_mm_s",
+                      "expression": "`vibration_mm_s`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_time",
+                  "displayName": "Time",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "vibration_mm_s",
+                  "displayName": "Vibration mm/s",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Vibration Trend"
+              }
+            }
           },
-          "position": { "x": 6, "y": 1, "width": 6, "height": 4 }
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 4
+          }
         },
         {
           "widget": {
             "name": "rpm_trend",
-            "queries": [{ "name": "main_query", "query": { "datasetName": "ds_live_telemetry", "fields": [ { "name": "event_time", "expression": "`event_time`" }, { "name": "machine_id", "expression": "`machine_id`" }, { "name": "rpm", "expression": "`rpm`" } ], "disaggregated": true } }],
-            "spec": { "version": 3, "widgetType": "line", "encodings": { "x": { "fieldName": "event_time", "displayName": "Time", "scale": { "type": "temporal" } }, "y": { "fieldName": "rpm", "displayName": "RPM", "scale": { "type": "quantitative" } }, "color": { "fieldName": "machine_id", "displayName": "Machine", "scale": { "type": "categorical" } } }, "frame": { "showTitle": true, "title": "RPM Trend" } }
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "event_time",
+                      "expression": "`event_time`"
+                    },
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "rpm",
+                      "expression": "`rpm`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_time",
+                  "displayName": "Time",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "rpm",
+                  "displayName": "RPM",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "RPM Trend"
+              }
+            }
           },
-          "position": { "x": 0, "y": 5, "width": 4, "height": 3 }
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 4,
+            "height": 3
+          }
         },
         {
           "widget": {
             "name": "current_trend",
-            "queries": [{ "name": "main_query", "query": { "datasetName": "ds_live_telemetry", "fields": [ { "name": "event_time", "expression": "`event_time`" }, { "name": "machine_id", "expression": "`machine_id`" }, { "name": "current_amps", "expression": "`current_amps`" } ], "disaggregated": true } }],
-            "spec": { "version": 3, "widgetType": "line", "encodings": { "x": { "fieldName": "event_time", "displayName": "Time", "scale": { "type": "temporal" } }, "y": { "fieldName": "current_amps", "displayName": "Current (A)", "scale": { "type": "quantitative" } }, "color": { "fieldName": "machine_id", "displayName": "Machine", "scale": { "type": "categorical" } } }, "frame": { "showTitle": true, "title": "Motor Current Trend" } }
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "event_time",
+                      "expression": "`event_time`"
+                    },
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "current_amps",
+                      "expression": "`current_amps`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_time",
+                  "displayName": "Time",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "current_amps",
+                  "displayName": "Current (A)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Motor Current Trend"
+              }
+            }
           },
-          "position": { "x": 4, "y": 5, "width": 4, "height": 3 }
+          "position": {
+            "x": 4,
+            "y": 6,
+            "width": 4,
+            "height": 3
+          }
         },
         {
           "widget": {
             "name": "humidity_trend",
-            "queries": [{ "name": "main_query", "query": { "datasetName": "ds_live_telemetry", "fields": [ { "name": "event_time", "expression": "`event_time`" }, { "name": "machine_id", "expression": "`machine_id`" }, { "name": "humidity_pct", "expression": "`humidity_pct`" } ], "disaggregated": true } }],
-            "spec": { "version": 3, "widgetType": "line", "encodings": { "x": { "fieldName": "event_time", "displayName": "Time", "scale": { "type": "temporal" } }, "y": { "fieldName": "humidity_pct", "displayName": "Humidity %", "scale": { "type": "quantitative" } }, "color": { "fieldName": "machine_id", "displayName": "Machine", "scale": { "type": "categorical" } } }, "frame": { "showTitle": true, "title": "Humidity Trend" } }
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "event_time",
+                      "expression": "`event_time`"
+                    },
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "humidity_pct",
+                      "expression": "`humidity_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_time",
+                  "displayName": "Time",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "humidity_pct",
+                  "displayName": "Humidity %",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Humidity Trend"
+              }
+            }
           },
-          "position": { "x": 8, "y": 5, "width": 4, "height": 3 }
+          "position": {
+            "x": 8,
+            "y": 6,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_machine",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212a59569629724ccfc5e_machine_id",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "machine_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Machine",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "machine_id",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212a59569629724ccfc5e_machine_id"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 4,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_line",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212a59569629724ccfc5e_line_name",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "line_name",
+                      "expression": "`line_name`"
+                    },
+                    {
+                      "name": "line_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Line Name",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "line_name",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212a59569629724ccfc5e_line_name"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 1,
+            "width": 4,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_state",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212a59569629724ccfc5e_state",
+                "query": {
+                  "datasetName": "ds_live_telemetry",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "state_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "State",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "state",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212a59569629724ccfc5e_state"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 1,
+            "width": 4,
+            "height": 1
+          }
         }
-      ]
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
     },
     {
       "name": "oee_downtime",
       "displayName": "OEE & Downtime",
-      "layoutVersion": "GRID_V1",
-      "pageType": "PAGE_TYPE_CANVAS",
       "layout": [
         {
-          "widget": { "name": "header_oee", "multilineTextboxSpec": { "lines": [ "## OEE & Downtime" ] } },
-          "position": { "x": 0, "y": 0, "width": 12, "height": 1 }
+          "widget": {
+            "name": "header_oee",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## OEE & Downtime"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
         },
         {
           "widget": {
@@ -417,8 +1372,14 @@
                 "query": {
                   "datasetName": "ds_metric_oee",
                   "fields": [
-                    { "name": "window_hour", "expression": "`window_hour`" },
-                    { "name": "oee_pct", "expression": "`oee_pct`" }
+                    {
+                      "name": "window_hour",
+                      "expression": "`window_hour`"
+                    },
+                    {
+                      "name": "oee_pct",
+                      "expression": "`oee_pct`"
+                    }
                   ],
                   "disaggregated": true
                 }
@@ -428,13 +1389,33 @@
               "version": 3,
               "widgetType": "line",
               "encodings": {
-                "x": { "fieldName": "window_hour", "displayName": "Window Hour", "scale": { "type": "temporal" } },
-                "y": { "fieldName": "oee_pct", "displayName": "OEE %", "scale": { "type": "quantitative" } }
+                "x": {
+                  "fieldName": "window_hour",
+                  "displayName": "Window Hour",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "oee_pct",
+                  "displayName": "OEE %",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
               },
-              "frame": { "showTitle": true, "title": "Fleet OEE Trend" }
+              "frame": {
+                "showTitle": true,
+                "title": "Fleet OEE Trend"
+              }
             }
           },
-          "position": { "x": 0, "y": 1, "width": 6, "height": 4 }
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 4
+          }
         },
         {
           "widget": {
@@ -445,9 +1426,18 @@
                 "query": {
                   "datasetName": "ds_health_window",
                   "fields": [
-                    { "name": "window_end", "expression": "`window_end`" },
-                    { "name": "machine_id", "expression": "`machine_id`" },
-                    { "name": "downtime_s", "expression": "`time_in_stopped_s` + `time_in_fault_s`" }
+                    {
+                      "name": "window_end",
+                      "expression": "`window_end`"
+                    },
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "downtime_s",
+                      "expression": "`time_in_stopped_s` + `time_in_fault_s`"
+                    }
                   ],
                   "disaggregated": true
                 }
@@ -457,53 +1447,538 @@
               "version": 3,
               "widgetType": "bar",
               "encodings": {
-                "x": { "fieldName": "window_end", "displayName": "Window End", "scale": { "type": "temporal" } },
-                "y": { "fieldName": "downtime_s", "displayName": "Downtime (s)", "scale": { "type": "quantitative" } },
-                "color": { "fieldName": "machine_id", "displayName": "Machine", "scale": { "type": "categorical" } }
+                "x": {
+                  "fieldName": "window_end",
+                  "displayName": "Window End",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "downtime_s",
+                  "displayName": "Downtime (s)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
               },
-              "frame": { "showTitle": true, "title": "Downtime by Window" }
+              "frame": {
+                "showTitle": true,
+                "title": "Downtime by Window"
+              }
             }
           },
-          "position": { "x": 6, "y": 1, "width": 6, "height": 4 }
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_machine",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212b58d5cfaec0e95f0c0_machine_id",
+                "query": {
+                  "datasetName": "ds_metric_oee",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "machine_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212aca9bd7a8c1ded77cb_machine_id",
+                "query": {
+                  "datasetName": "ds_health_window",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "machine_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Machine",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "machine_id",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212b58d5cfaec0e95f0c0_machine_id"
+                  },
+                  {
+                    "fieldName": "machine_id",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212aca9bd7a8c1ded77cb_machine_id"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_line",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212aca9bd7a8c1ded77cb_line_name",
+                "query": {
+                  "datasetName": "ds_health_window",
+                  "fields": [
+                    {
+                      "name": "line_name",
+                      "expression": "`line_name`"
+                    },
+                    {
+                      "name": "line_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Line Name",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "line_name",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f1181d887212aca9bd7a8c1ded77cb_line_name"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 1,
+            "width": 6,
+            "height": 1
+          }
         }
-      ]
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
     },
     {
       "name": "machine_drilldown",
       "displayName": "Machine Drill-Down",
-      "layoutVersion": "GRID_V1",
-      "pageType": "PAGE_TYPE_CANVAS",
       "layout": [
         {
-          "widget": { "name": "header_drilldown", "multilineTextboxSpec": { "lines": [ "## Machine Drill-Down" ] } },
-          "position": { "x": 0, "y": 0, "width": 12, "height": 1 }
+          "widget": {
+            "name": "header_drilldown",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Machine Drill-Down"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
         },
         {
           "widget": {
-            "name": "device_health_latency_table",
+            "name": "filter_outlier",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f11c0c6c8114dabfb10188e62b69b2_Is Outlier",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "Is Outlier",
+                      "expression": "`Is Outlier`"
+                    },
+                    {
+                      "name": "Is Outlier_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Outlier Status",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Is Outlier",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f11c0c6c8114dabfb10188e62b69b2_Is Outlier"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 1,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_hop1",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_device_drilldown",
+                  "datasetName": "ab2cd493",
                   "fields": [
-                    { "name": "machine_id", "expression": "`machine_id`" },
-                    { "name": "line_name", "expression": "`line_name`" },
-                    { "name": "state", "expression": "`state`" },
-                    { "name": "last_event_time", "expression": "`last_event_time`" },
-                    { "name": "telemetry_lag_ms", "expression": "`telemetry_lag_ms`" },
-                    { "name": "ml_lag_ms", "expression": "`ml_lag_ms`" },
-                    { "name": "oee_pct", "expression": "`oee_pct`" },
-                    { "name": "anomaly_score", "expression": "`anomaly_score`" },
-                    { "name": "prob_fault_next_5m", "expression": "`prob_fault_next_5m`" },
-                    { "name": "prob_fault_next_1h", "expression": "`prob_fault_next_1h`" },
-                    { "name": "prob_fault_next_24h", "expression": "`prob_fault_next_24h`" },
-                    { "name": "prob_fault_next_7d", "expression": "`prob_fault_next_7d`" },
-                    { "name": "temp_c", "expression": "`temp_c`" },
-                    { "name": "vibration_mm_s", "expression": "`vibration_mm_s`" },
-                    { "name": "rpm", "expression": "`rpm`" },
-                    { "name": "current_amps", "expression": "`current_amps`" },
-                    { "name": "humidity_pct", "expression": "`humidity_pct`" }
+                    {
+                      "name": "avg(Hop 1: Device → IoT Hub (ms))",
+                      "expression": "AVG(`Hop 1: Device → IoT Hub (ms)`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Avg Device → IoT Hub",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(Hop 1: Device → IoT Hub (ms))",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "ms"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_hop2",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "avg(Hop 2: IoT Hub → ZeroBus (ms))",
+                      "expression": "AVG(`Hop 2: IoT Hub → ZeroBus (ms)`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Avg IoT Hub → ZeroBus",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(Hop 2: IoT Hub → ZeroBus (ms))",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "ms"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_total",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "avg(Total Latency (ms))",
+                      "expression": "AVG(`Total Latency (ms)`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Avg Total Latency",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(Total Latency (ms))",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "ms"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_p95",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "percentile(Total Latency (ms), percentage=0_95)",
+                      "expression": "PERCENTILE(`Total Latency (ms)`, 0.95)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "P95 Total Latency",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "percentile(Total Latency (ms), percentage=0_95)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "ms"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_outlier_count",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`Is Outlier` IN ('Outlier')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Outlier Records",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(*)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "count"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_record_count",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Records",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(*)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "compact"
+                  },
+                  "displayName": "count"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "latency_over_time",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "Is Outlier",
+                      "expression": "`Is Outlier`"
+                    },
+                    {
+                      "name": "device_ts",
+                      "expression": "`device_ts`"
+                    },
+                    {
+                      "name": "Total Latency (ms)",
+                      "expression": "`Total Latency (ms)`"
+                    }
                   ],
                   "disaggregated": true
                 }
@@ -511,68 +1986,1963 @@
             ],
             "spec": {
               "version": 3,
-              "widgetType": "table",
-              "encodings": {
-                "columns": [
-                  { "fieldName": "machine_id", "displayName": "Machine" },
-                  { "fieldName": "line_name", "displayName": "Line" },
-                  { "fieldName": "state", "displayName": "State" },
-                  { "fieldName": "last_event_time", "displayName": "Last Event" },
-                  { "fieldName": "telemetry_lag_ms", "displayName": "Telemetry Lag (ms)" },
-                  { "fieldName": "ml_lag_ms", "displayName": "ML Lag (ms)" },
-                  { "fieldName": "oee_pct", "displayName": "OEE %" },
-                  { "fieldName": "anomaly_score", "displayName": "Anomaly" },
-                  { "fieldName": "prob_fault_next_5m", "displayName": "Risk 5m" },
-                  { "fieldName": "prob_fault_next_1h", "displayName": "Risk 1h" },
-                  { "fieldName": "prob_fault_next_24h", "displayName": "Risk 24h" },
-                  { "fieldName": "prob_fault_next_7d", "displayName": "Risk 7d" },
-                  { "fieldName": "temp_c", "displayName": "Temp C" },
-                  { "fieldName": "vibration_mm_s", "displayName": "Vibration" },
-                  { "fieldName": "rpm", "displayName": "RPM" },
-                  { "fieldName": "current_amps", "displayName": "Current (A)" },
-                  { "fieldName": "humidity_pct", "displayName": "Humidity %" }
-                ]
+              "frame": {
+                "title": "Total Latency Over Time",
+                "showTitle": true
               },
-              "frame": { "showTitle": true, "title": "Machine Drill-Down Details" }
+              "widgetType": "scatter",
+              "encodings": {
+                "x": {
+                  "fieldName": "device_ts",
+                  "displayName": "Device Timestamp",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "Total Latency (ms)",
+                  "displayName": "Total Latency (ms)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "Is Outlier",
+                  "displayName": "Outlier Status",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "Outlier",
+                        "color": "#FF4444"
+                      },
+                      {
+                        "value": "Normal",
+                        "color": "#4CAF50"
+                      }
+                    ]
+                  }
+                }
+              }
             }
           },
-          "position": { "x": 0, "y": 1, "width": 12, "height": 6 }
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 4
+          }
         },
         {
           "widget": {
-            "name": "latency_status_monitor_table",
+            "name": "latency_distribution",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_latency_monitor",
+                  "datasetName": "ab2cd493",
                   "fields": [
-                    { "name": "machine_id", "expression": "`machine_id`" },
-                    { "name": "telemetry_lag_ms", "expression": "`telemetry_lag_ms`" },
-                    { "name": "ml_lag_ms", "expression": "`ml_lag_ms`" },
-                    { "name": "latency_status", "expression": "`latency_status`" }
+                    {
+                      "name": "Latency Bucket",
+                      "expression": "`Latency Bucket`"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Latency Distribution",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Latency Bucket",
+                  "displayName": "Latency Bucket",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "< 500ms",
+                        "500ms - 1s",
+                        "1s - 5s",
+                        "5s - 1m",
+                        "> 1m (Outlier)"
+                      ]
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "count(*)",
+                  "displayName": "Record Count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "Latency Bucket",
+                  "legend": {
+                    "hide": true
+                  },
+                  "displayName": "Latency Bucket",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "< 500ms",
+                        "color": "#4CAF50"
+                      },
+                      {
+                        "value": "500ms - 1s",
+                        "color": "#8BC34A"
+                      },
+                      {
+                        "value": "1s - 5s",
+                        "color": "#FFC107"
+                      },
+                      {
+                        "value": "5s - 1m",
+                        "color": "#FF9800"
+                      },
+                      {
+                        "value": "> 1m (Outlier)",
+                        "color": "#FF4444"
+                      }
+                    ]
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 4,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "latency_boxplot",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "percentile(Total Latency (ms), percentage=0_95)",
+                      "expression": "PERCENTILE(`Total Latency (ms)`, 0.95)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Latency Distribution by Machine",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "percentile(Total Latency (ms), percentage=0_95)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "compact"
+                  },
+                  "displayName": "P95 Latency (ms)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "legend": {
+                    "hide": true
+                  },
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "hop_by_machine",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "avg(Hop 1: Device → IoT Hub (ms))",
+                      "expression": "AVG(`Hop 1: Device → IoT Hub (ms)`)"
+                    },
+                    {
+                      "name": "avg(Hop 2: IoT Hub → ZeroBus (ms))",
+                      "expression": "AVG(`Hop 2: IoT Hub → ZeroBus (ms)`)"
+                    },
+                    {
+                      "name": "avg(Total Latency (ms))",
+                      "expression": "AVG(`Total Latency (ms)`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Avg Latency by Hop per Machine",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "machine_id",
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "avg(Total Latency (ms))",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "compact"
+                  },
+                  "displayName": "Avg Total Latency (ms)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "machine_id",
+                  "legend": {
+                    "hide": true
+                  },
+                  "displayName": "Machine",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                },
+                "extra": [
+                  {
+                    "fieldName": "avg(Hop 1: Device → IoT Hub (ms))",
+                    "displayName": "Avg Hop 1 (ms)"
+                  },
+                  {
+                    "fieldName": "avg(Hop 2: IoT Hub → ZeroBus (ms))",
+                    "displayName": "Avg Hop 2 (ms)"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "detail_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "device_ts",
+                      "expression": "`device_ts`"
+                    },
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "fault_code",
+                      "expression": "`fault_code`"
+                    },
+                    {
+                      "name": "Hop 1: Device → IoT Hub (ms)",
+                      "expression": "`Hop 1: Device → IoT Hub (ms)`"
+                    },
+                    {
+                      "name": "Hop 2: IoT Hub → ZeroBus (ms)",
+                      "expression": "`Hop 2: IoT Hub → ZeroBus (ms)`"
+                    },
+                    {
+                      "name": "Total Latency (ms)",
+                      "expression": "`Total Latency (ms)`"
+                    },
+                    {
+                      "name": "Is Outlier",
+                      "expression": "`Is Outlier`"
+                    },
+                    {
+                      "name": "temp_c",
+                      "expression": "`temp_c`"
+                    },
+                    {
+                      "name": "vibration_mm_s",
+                      "expression": "`vibration_mm_s`"
+                    },
+                    {
+                      "name": "rpm",
+                      "expression": "`rpm`"
+                    },
+                    {
+                      "name": "current_amps",
+                      "expression": "`current_amps`"
+                    },
+                    {
+                      "name": "throughput_cpm",
+                      "expression": "`throughput_cpm`"
+                    },
+                    {
+                      "name": "humidity_pct",
+                      "expression": "`humidity_pct`"
+                    },
+                    {
+                      "name": "load_pct",
+                      "expression": "`load_pct`"
+                    },
+                    {
+                      "name": "power_kw",
+                      "expression": "`power_kw`"
+                    },
+                    {
+                      "name": "voltage_v",
+                      "expression": "`voltage_v`"
+                    },
+                    {
+                      "name": "pressure_bar",
+                      "expression": "`pressure_bar`"
+                    },
+                    {
+                      "name": "flow_rate_lpm",
+                      "expression": "`flow_rate_lpm`"
+                    }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 3,
+              "version": 2,
+              "frame": {
+                "title": "Telemetry Detail",
+                "showTitle": true
+              },
+              "rowsPerPage": 25,
               "widgetType": "table",
               "encodings": {
                 "columns": [
-                  { "fieldName": "machine_id", "displayName": "Machine" },
-                  { "fieldName": "telemetry_lag_ms", "displayName": "Telemetry Lag (ms)" },
-                  { "fieldName": "ml_lag_ms", "displayName": "ML Lag (ms)" },
-                  { "fieldName": "latency_status", "displayName": "Latency Status" }
+                  {
+                    "fieldName": "machine_id",
+                    "displayName": "Machine"
+                  },
+                  {
+                    "fieldName": "device_ts",
+                    "displayName": "Device Time"
+                  },
+                  {
+                    "fieldName": "state",
+                    "displayName": "State"
+                  },
+                  {
+                    "fieldName": "fault_code",
+                    "displayName": "Fault Code"
+                  },
+                  {
+                    "fieldName": "Hop 1: Device → IoT Hub (ms)",
+                    "displayName": "Hop 1 (ms)"
+                  },
+                  {
+                    "fieldName": "Hop 2: IoT Hub → ZeroBus (ms)",
+                    "displayName": "Hop 2 (ms)"
+                  },
+                  {
+                    "fieldName": "Total Latency (ms)",
+                    "displayName": "Total (ms)",
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "5000"
+                            },
+                            "operator": ">"
+                          },
+                          "backgroundColor": "#FFF3E0",
+                          "foregroundColor": "#E65100"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "Is Outlier",
+                    "displayName": "Outlier",
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "Outlier"
+                            },
+                            "operator": "="
+                          },
+                          "backgroundColor": "#FFCDD2",
+                          "foregroundColor": "#B71C1C"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "temp_c",
+                    "displayName": "Temp (°C)"
+                  },
+                  {
+                    "fieldName": "vibration_mm_s",
+                    "displayName": "Vibration (mm/s)"
+                  },
+                  {
+                    "fieldName": "rpm",
+                    "displayName": "RPM"
+                  },
+                  {
+                    "fieldName": "current_amps",
+                    "displayName": "Current (A)"
+                  },
+                  {
+                    "fieldName": "throughput_cpm",
+                    "displayName": "Throughput (cpm)"
+                  },
+                  {
+                    "fieldName": "humidity_pct",
+                    "displayName": "Humidity (%)"
+                  },
+                  {
+                    "fieldName": "load_pct",
+                    "displayName": "Load (%)"
+                  },
+                  {
+                    "fieldName": "power_kw",
+                    "displayName": "Power (kW)"
+                  },
+                  {
+                    "fieldName": "voltage_v",
+                    "displayName": "Voltage (V)"
+                  },
+                  {
+                    "fieldName": "pressure_bar",
+                    "displayName": "Pressure (bar)"
+                  },
+                  {
+                    "fieldName": "flow_rate_lpm",
+                    "displayName": "Flow Rate (lpm)"
+                  }
                 ]
-              },
-              "frame": { "showTitle": true, "title": "Latency Status Monitor (Worst First)" }
+              }
             }
           },
-          "position": { "x": 0, "y": 7, "width": 12, "height": 3 }
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_machine",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f11c0c6c8114dabfb10188e62b69b2_machine_id",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "machine_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Machine",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "machine_id",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f11c0c6c8114dabfb10188e62b69b2_machine_id"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_line",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f11c0c6c8114dabfb10188e62b69b2_line_name",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "line_name",
+                      "expression": "`line_name`"
+                    },
+                    {
+                      "name": "line_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Line Name",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "line_name",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f11c0c6c8114dabfb10188e62b69b2_line_name"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 1,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_state",
+            "queries": [
+              {
+                "name": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f11c0c6c8114dabfb10188e62b69b2_state",
+                "query": {
+                  "datasetName": "ab2cd493",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "state_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "State",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "state",
+                    "queryName": "dashboards/01f11755a5c31ce2ae7e3f1c7a514115/datasets/01f11c0c6c8114dabfb10188e62b69b2_state"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 1,
+            "width": 3,
+            "height": 1
+          }
         }
-      ]
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "e4950c47",
+      "displayName": "Current Machine State",
+      "layout": [
+        {
+          "widget": {
+            "name": "header_state",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Current Machine State"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_hop1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(Hop 1: Device → IoT Hub (ms))",
+                      "expression": "AVG(`Hop 1: Device → IoT Hub (ms)`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Device → IoT Hub (ms)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(Hop 1: Device → IoT Hub (ms))",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "ms"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_hop2",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(Hop 2: IoT Hub → ZeroBus (ms))",
+                      "expression": "AVG(`Hop 2: IoT Hub → ZeroBus (ms)`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "IoT Hub → ZeroBus (ms)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(Hop 2: IoT Hub → ZeroBus (ms))",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "ms"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 1,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_total_latency",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(Total Latency (ms))",
+                      "expression": "AVG(`Total Latency (ms)`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Latency (ms)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(Total Latency (ms))",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "ms"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 1,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_temp",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(temp_c)",
+                      "expression": "AVG(`temp_c`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Temperature (°C)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(temp_c)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    },
+                    "abbreviation": "none"
+                  },
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "75"
+                          },
+                          "operator": "<"
+                        },
+                        "color": "#4CAF50"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "75"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#FF9800"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "85"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#F44336"
+                      }
+                    ]
+                  },
+                  "displayName": "°C"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_vibration",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(vibration_mm_s)",
+                      "expression": "AVG(`vibration_mm_s`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Vibration (mm/s)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(vibration_mm_s)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    },
+                    "abbreviation": "none"
+                  },
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "6"
+                          },
+                          "operator": "<"
+                        },
+                        "color": "#4CAF50"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "6"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#FF9800"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "9"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#F44336"
+                      }
+                    ]
+                  },
+                  "displayName": "mm/s"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_rpm",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(rpm)",
+                      "expression": "AVG(`rpm`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "RPM (rev/min)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(rpm)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "abbreviation": "none"
+                  },
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "100"
+                          },
+                          "operator": "<"
+                        },
+                        "color": "#F44336"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "100"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#4CAF50"
+                      }
+                    ]
+                  },
+                  "displayName": "rpm"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_current",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(current_amps)",
+                      "expression": "AVG(`current_amps`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Current (A)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(current_amps)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    },
+                    "abbreviation": "none"
+                  },
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "9"
+                          },
+                          "operator": "<"
+                        },
+                        "color": "#4CAF50"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "9"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#FF9800"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "12"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#F44336"
+                      }
+                    ]
+                  },
+                  "displayName": "A"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_load",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(load_pct)",
+                      "expression": "AVG(`load_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Load (%)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(load_pct)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    },
+                    "abbreviation": "none"
+                  },
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "10"
+                          },
+                          "operator": "<"
+                        },
+                        "color": "#F44336"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "10"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#4CAF50"
+                      }
+                    ]
+                  },
+                  "displayName": "%"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_power",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(power_kw)",
+                      "expression": "AVG(`power_kw`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Power (kW)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(power_kw)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "kW"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 3,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_throughput",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(throughput_cpm)",
+                      "expression": "AVG(`throughput_cpm`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Throughput (cpm)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(throughput_cpm)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    },
+                    "abbreviation": "none"
+                  },
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "10"
+                          },
+                          "operator": "<"
+                        },
+                        "color": "#F44336"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "10"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#4CAF50"
+                      }
+                    ]
+                  },
+                  "displayName": "cpm"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_humidity",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(humidity_pct)",
+                      "expression": "AVG(`humidity_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Humidity (%)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(humidity_pct)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "%"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 5,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_pressure",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(pressure_bar)",
+                      "expression": "AVG(`pressure_bar`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Pressure (bar)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(pressure_bar)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "bar"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 5,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_flow",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(flow_rate_lpm)",
+                      "expression": "AVG(`flow_rate_lpm`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Flow Rate (L/min)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(flow_rate_lpm)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "L/min"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_voltage",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(voltage_v)",
+                      "expression": "AVG(`voltage_v`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Voltage (V)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(voltage_v)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "V"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 5,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_pf",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "avg(power_factor)",
+                      "expression": "AVG(`power_factor`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Power Factor (PF)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(power_factor)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    },
+                    "abbreviation": "none"
+                  },
+                  "displayName": "PF"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 5,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "detail_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8e3ad484",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "fault_code",
+                      "expression": "`fault_code`"
+                    },
+                    {
+                      "name": "event_time",
+                      "expression": "`event_time`"
+                    },
+                    {
+                      "name": "iothub_time",
+                      "expression": "`iothub_time`"
+                    },
+                    {
+                      "name": "ingest_time",
+                      "expression": "`ingest_time`"
+                    },
+                    {
+                      "name": "Hop 1: Device → IoT Hub (ms)",
+                      "expression": "`Hop 1: Device → IoT Hub (ms)`"
+                    },
+                    {
+                      "name": "Hop 2: IoT Hub → ZeroBus (ms)",
+                      "expression": "`Hop 2: IoT Hub → ZeroBus (ms)`"
+                    },
+                    {
+                      "name": "Total Latency (ms)",
+                      "expression": "`Total Latency (ms)`"
+                    },
+                    {
+                      "name": "temp_c",
+                      "expression": "`temp_c`"
+                    },
+                    {
+                      "name": "vibration_mm_s",
+                      "expression": "`vibration_mm_s`"
+                    },
+                    {
+                      "name": "rpm",
+                      "expression": "`rpm`"
+                    },
+                    {
+                      "name": "current_amps",
+                      "expression": "`current_amps`"
+                    },
+                    {
+                      "name": "load_pct",
+                      "expression": "`load_pct`"
+                    },
+                    {
+                      "name": "power_kw",
+                      "expression": "`power_kw`"
+                    },
+                    {
+                      "name": "throughput_cpm",
+                      "expression": "`throughput_cpm`"
+                    },
+                    {
+                      "name": "humidity_pct",
+                      "expression": "`humidity_pct`"
+                    },
+                    {
+                      "name": "pressure_bar",
+                      "expression": "`pressure_bar`"
+                    },
+                    {
+                      "name": "flow_rate_lpm",
+                      "expression": "`flow_rate_lpm`"
+                    },
+                    {
+                      "name": "voltage_v",
+                      "expression": "`voltage_v`"
+                    },
+                    {
+                      "name": "power_factor",
+                      "expression": "`power_factor`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Machine Telemetry Detail",
+                "showTitle": true
+              },
+              "rowsPerPage": 25,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "machine_id",
+                    "displayName": "Machine"
+                  },
+                  {
+                    "fieldName": "state",
+                    "displayName": "State",
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "FAULT"
+                            },
+                            "operator": "="
+                          },
+                          "backgroundColor": "#FFCDD2",
+                          "foregroundColor": "#B71C1C"
+                        },
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "STOPPED"
+                            },
+                            "operator": "="
+                          },
+                          "backgroundColor": "#FFF9C4",
+                          "foregroundColor": "#F57F17"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "fault_code",
+                    "displayName": "Fault Code"
+                  },
+                  {
+                    "fieldName": "event_time",
+                    "displayName": "Event Time"
+                  },
+                  {
+                    "fieldName": "iothub_time",
+                    "displayName": "IoT Hub Time"
+                  },
+                  {
+                    "fieldName": "ingest_time",
+                    "displayName": "Ingest Time"
+                  },
+                  {
+                    "fieldName": "Hop 1: Device → IoT Hub (ms)",
+                    "displayName": "Hop 1 (ms)"
+                  },
+                  {
+                    "fieldName": "Hop 2: IoT Hub → ZeroBus (ms)",
+                    "displayName": "Hop 2 (ms)"
+                  },
+                  {
+                    "fieldName": "Total Latency (ms)",
+                    "displayName": "Total Latency (ms)"
+                  },
+                  {
+                    "fieldName": "temp_c",
+                    "displayName": "Temp (°C)",
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "85"
+                            },
+                            "operator": ">="
+                          },
+                          "backgroundColor": "#FFCDD2",
+                          "foregroundColor": "#B71C1C"
+                        },
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "75"
+                            },
+                            "operator": ">="
+                          },
+                          "backgroundColor": "#FFF9C4",
+                          "foregroundColor": "#F57F17"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "vibration_mm_s",
+                    "displayName": "Vibration (mm/s)",
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "9"
+                            },
+                            "operator": ">="
+                          },
+                          "backgroundColor": "#FFCDD2",
+                          "foregroundColor": "#B71C1C"
+                        },
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "6"
+                            },
+                            "operator": ">="
+                          },
+                          "backgroundColor": "#FFF9C4",
+                          "foregroundColor": "#F57F17"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "rpm",
+                    "displayName": "RPM",
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "100"
+                            },
+                            "operator": "<"
+                          },
+                          "backgroundColor": "#FFCDD2",
+                          "foregroundColor": "#B71C1C"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "current_amps",
+                    "displayName": "Current (A)",
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "12"
+                            },
+                            "operator": ">="
+                          },
+                          "backgroundColor": "#FFCDD2",
+                          "foregroundColor": "#B71C1C"
+                        },
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "9"
+                            },
+                            "operator": ">="
+                          },
+                          "backgroundColor": "#FFF9C4",
+                          "foregroundColor": "#F57F17"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "load_pct",
+                    "displayName": "Load (%)",
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "10"
+                            },
+                            "operator": "<"
+                          },
+                          "backgroundColor": "#FFCDD2",
+                          "foregroundColor": "#B71C1C"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "power_kw",
+                    "displayName": "Power (kW)"
+                  },
+                  {
+                    "fieldName": "throughput_cpm",
+                    "displayName": "Throughput (cpm)",
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "10"
+                            },
+                            "operator": "<"
+                          },
+                          "backgroundColor": "#FFCDD2",
+                          "foregroundColor": "#B71C1C"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "humidity_pct",
+                    "displayName": "Humidity (%)"
+                  },
+                  {
+                    "fieldName": "pressure_bar",
+                    "displayName": "Pressure (bar)"
+                  },
+                  {
+                    "fieldName": "flow_rate_lpm",
+                    "displayName": "Flow Rate (L/min)"
+                  },
+                  {
+                    "fieldName": "voltage_v",
+                    "displayName": "Voltage (V)"
+                  },
+                  {
+                    "fieldName": "power_factor",
+                    "displayName": "Power Factor"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "global_filters",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
     }
   ],
   "uiSettings": {

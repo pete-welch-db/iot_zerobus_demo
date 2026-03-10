@@ -237,6 +237,70 @@ def main() -> None:
         """
     )
 
+    spark.sql(
+        f"""
+        CREATE OR REPLACE VIEW {catalog}.{schema}.mv_pipeline_latency
+        WITH METRICS
+        LANGUAGE YAML
+        AS $$
+          version: 1.1
+          source: {catalog}.{schema}.vw_pipeline_latency
+          dimensions:
+            - name: Machine
+              expr: machine_id
+            - name: Line
+              expr: line_name
+            - name: State
+              expr: state
+            - name: Device Time
+              expr: device_ts
+            - name: Device Date
+              expr: DATE(device_ts)
+            - name: Device Hour
+              expr: DATE_TRUNC('HOUR', device_ts)
+          measures:
+            - name: Record Count
+              expr: COUNT(1)
+            - name: Avg Device to IoT Hub ms
+              expr: AVG(hop1_device_to_iothub_ms)
+            - name: Avg IoT Hub to ZeroBus ms
+              expr: AVG(hop2_iothub_to_zerobus_ms)
+            - name: Avg Total Latency ms
+              expr: AVG(total_device_to_zerobus_ms)
+            - name: P50 Device to IoT Hub ms
+              expr: PERCENTILE(hop1_device_to_iothub_ms, 0.50)
+            - name: P95 Device to IoT Hub ms
+              expr: PERCENTILE(hop1_device_to_iothub_ms, 0.95)
+            - name: P99 Device to IoT Hub ms
+              expr: PERCENTILE(hop1_device_to_iothub_ms, 0.99)
+            - name: P50 IoT Hub to ZeroBus ms
+              expr: PERCENTILE(hop2_iothub_to_zerobus_ms, 0.50)
+            - name: P95 IoT Hub to ZeroBus ms
+              expr: PERCENTILE(hop2_iothub_to_zerobus_ms, 0.95)
+            - name: P99 IoT Hub to ZeroBus ms
+              expr: PERCENTILE(hop2_iothub_to_zerobus_ms, 0.99)
+            - name: P50 Total Latency ms
+              expr: PERCENTILE(total_device_to_zerobus_ms, 0.50)
+            - name: P95 Total Latency ms
+              expr: PERCENTILE(total_device_to_zerobus_ms, 0.95)
+            - name: P99 Total Latency ms
+              expr: PERCENTILE(total_device_to_zerobus_ms, 0.99)
+            - name: Min Device to IoT Hub ms
+              expr: MIN(hop1_device_to_iothub_ms)
+            - name: Max Device to IoT Hub ms
+              expr: MAX(hop1_device_to_iothub_ms)
+            - name: Min IoT Hub to ZeroBus ms
+              expr: MIN(hop2_iothub_to_zerobus_ms)
+            - name: Max IoT Hub to ZeroBus ms
+              expr: MAX(hop2_iothub_to_zerobus_ms)
+            - name: Min Total Latency ms
+              expr: MIN(total_device_to_zerobus_ms)
+            - name: Max Total Latency ms
+              expr: MAX(total_device_to_zerobus_ms)
+        $$
+        """
+    )
+
     print(f"UC metric views refreshed in {catalog}.{schema}:")
     print("- mv_machine_telemetry")
     print("- mv_machine_oee")
@@ -244,6 +308,7 @@ def main() -> None:
     print("- mv_machine_risk")
     print("- mv_machine_freshness")
     print("- mv_machine_current")
+    print("- mv_pipeline_latency")
 
 
 if __name__ == "__main__":

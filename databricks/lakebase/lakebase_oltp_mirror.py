@@ -15,8 +15,10 @@ import json
 import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote as urlquote
 
 import psycopg2
+import requests
 from psycopg2.extras import execute_values
 
 # ─────────────────────────────────────────────────────────────────────
@@ -47,14 +49,61 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db-host", default="", help="PostgreSQL host")
     parser.add_argument("--db-port", type=int, default=5432, help="PostgreSQL port")
     parser.add_argument("--db-name", default="iot_demo", help="PostgreSQL database name")
-    parser.add_argument("--secret-scope", required=True, help="Databricks secret scope")
-    parser.add_argument("--user-secret-key", required=True, help="Secret key for PostgreSQL user")
-    parser.add_argument("--password-secret-key", required=True, help="Secret key for PostgreSQL password")
+    parser.add_argument("--db-user", default="", help="PostgreSQL user (overrides secret lookup and dynamic auth)")
+    parser.add_argument("--lakebase-instance-name", default="", help="Lakebase instance name for dynamic credential generation")
+    parser.add_argument("--secret-scope", default="", help="Databricks secret scope (fallback when no instance name)")
+    parser.add_argument("--user-secret-key", default="", help="Secret key for PostgreSQL user (fallback)")
+    parser.add_argument("--password-secret-key", default="", help="Secret key for PostgreSQL password (fallback)")
     parser.add_argument("--instance-id", default="", help="Unique instance ID for tracking")
     parser.add_argument("--dry-run", action="store_true", help="Validate data without writing to Lakebase")
     parser.add_argument("--batch-mode", action="store_true", help="Force batch processing (bypass collect())")
     parser.add_argument("--max-rows", type=int, default=MAX_ROWS_FOR_COLLECT, help="Max rows for collect()")
     return parser.parse_args()
+
+
+def _generate_credential(workspace_url: str, api_token: str, instance_name: str) -> str:
+    """Call the Databricks generate-database-credential API for a short-lived OAuth token."""
+    url = f"{workspace_url.rstrip('/')}/api/2.0/database/credentials"
+    resp = requests.post(
+        url,
+        headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
+        json={"request_id": "lakebase-mirror", "instance_names": [instance_name]},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    token = resp.json().get("token", "")
+    if not token:
+        raise RuntimeError("generate-database-credential returned empty token")
+    logger.info("Generated Lakebase credential via generate-database-credential API")
+    return token
+
+
+def _get_notebook_context() -> Tuple[str, str, str]:
+    """Extract workspace URL, API token, and current username from the Databricks notebook context."""
+    ctx = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
+    workspace_url = ctx.apiUrl().get()
+    api_token = ctx.apiToken().get()
+    user_name = ctx.userName().get()
+    return workspace_url, api_token, user_name
+
+
+def _resolve_credentials(args: argparse.Namespace) -> Tuple[str, str]:
+    """Resolve PostgreSQL user and password via dynamic auth or secret-scope fallback."""
+    if args.lakebase_instance_name:
+        workspace_url, api_token, user_name = _get_notebook_context()
+        user = args.db_user or user_name
+        password = _generate_credential(workspace_url, api_token, args.lakebase_instance_name)
+        return user, password
+
+    if args.secret_scope and args.user_secret_key and args.password_secret_key:
+        user = dbutils.secrets.get(scope=args.secret_scope, key=args.user_secret_key)
+        password = dbutils.secrets.get(scope=args.secret_scope, key=args.password_secret_key)
+        return user, password
+
+    raise ValueError(
+        "Provide --lakebase-instance-name for dynamic auth, "
+        "or --secret-scope/--user-secret-key/--password-secret-key for secret-based auth."
+    )
 
 
 def _resolve_jdbc(args: argparse.Namespace) -> str:
@@ -66,14 +115,20 @@ def _resolve_jdbc(args: argparse.Namespace) -> str:
     return f"jdbc:postgresql://{args.db_host}:{args.db_port}/{args.db_name}"
 
 
+def _build_pg_dsn(host: str, port: int, dbname: str, user: str, password: str) -> str:
+    """Build a psycopg2-compatible DSN from individual components."""
+    return (
+        f"postgresql://{urlquote(user, safe='')}:{urlquote(password, safe='')}"
+        f"@{host}:{port}/{dbname}?sslmode=require&connect_timeout={CONNECTION_TIMEOUT}"
+    )
+
+
 def _jdbc_to_pg_dsn(jdbc_url: str, user: str, password: str) -> str:
     """Convert JDBC URL to psycopg2 DSN connection string."""
     if not jdbc_url.startswith("jdbc:postgresql://"):
         raise ValueError(f"Unsupported JDBC URL format: {jdbc_url}")
-    # Remove "jdbc:" prefix
     dsn = jdbc_url.replace("jdbc:", "", 1)
-    # Add connection parameters
-    return f"{dsn}?sslmode=require&user={user}&password={password}&connect_timeout={CONNECTION_TIMEOUT}"
+    return f"{dsn}?sslmode=require&user={urlquote(user, safe='')}&password={urlquote(password, safe='')}&connect_timeout={CONNECTION_TIMEOUT}"
 
 
 def _validate_row_count(view_name: str, max_rows: int) -> Tuple[int, bool]:
@@ -294,6 +349,33 @@ def _ensure_tables(conn) -> None:
             """
         )
         
+        # Create dimension table for machine-to-line mapping
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dim_machine (
+              machine_id TEXT PRIMARY KEY,
+              line_name TEXT
+            )
+            """
+        )
+
+        # Create service requests table (written by the Streamlit app)
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS service_requests (
+              id            TEXT PRIMARY KEY,
+              machine_id    TEXT NOT NULL,
+              priority      TEXT NOT NULL,
+              request_type  TEXT NOT NULL,
+              description   TEXT,
+              requestor     TEXT,
+              status        TEXT NOT NULL DEFAULT 'OPEN',
+              created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+
         # Create index on last_event_time for faster queries
         cur.execute(
             """
@@ -301,10 +383,47 @@ def _ensure_tables(conn) -> None:
             ON machine_current_status(last_event_time DESC)
             """
         )
+
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_service_requests_status
+            ON service_requests(status, created_at DESC)
+            """
+        )
     
     conn.commit()
     elapsed = time.time() - start_time
     logger.info(f"Tables ensured in {elapsed:.2f}s")
+
+
+def _sync_dim_machine(conn, catalog: str, schema: str) -> int:
+    """Sync the dim_machine dimension table from Unity Catalog into Lakebase."""
+    logger.info("Syncing dim_machine from Unity Catalog...")
+    start_time = time.time()
+
+    df = spark.table(f"{catalog}.{schema}.dim_machine").select("machine_id", "line_name")
+    rows = [(r["machine_id"], r["line_name"]) for r in df.collect()]
+
+    if not rows:
+        logger.warning("dim_machine is empty; skipping sync")
+        return 0
+
+    with conn.cursor() as cur:
+        execute_values(
+            cur,
+            """
+            INSERT INTO dim_machine (machine_id, line_name)
+            VALUES %s
+            ON CONFLICT (machine_id) DO UPDATE SET
+              line_name = EXCLUDED.line_name
+            """,
+            rows,
+        )
+    conn.commit()
+
+    elapsed = time.time() - start_time
+    logger.info(f"Synced {len(rows)} dim_machine rows in {elapsed:.2f}s")
+    return len(rows)
 
 
 def _upsert_rows(
@@ -498,10 +617,12 @@ def main() -> None:
         # STAGE 4: Connect to PostgreSQL
         # ─────────────────────────────────────────────────────────────────
         stage_start = time.time()
-        user = dbutils.secrets.get(scope=args.secret_scope, key=args.user_secret_key)
-        password = dbutils.secrets.get(scope=args.secret_scope, key=args.password_secret_key)
-        jdbc_url = _resolve_jdbc(args)
-        dsn = _jdbc_to_pg_dsn(jdbc_url, user, password)
+        user, password = _resolve_credentials(args)
+        if args.db_host:
+            dsn = _build_pg_dsn(args.db_host, args.db_port, args.db_name, user, password)
+        else:
+            jdbc_url = _resolve_jdbc(args)
+            dsn = _jdbc_to_pg_dsn(jdbc_url, user, password)
         
         conn = _connect_with_retry(dsn, MAX_RETRIES)
         metrics["stages"]["connect_postgres"] = time.time() - stage_start
@@ -513,6 +634,14 @@ def main() -> None:
         _ensure_tables(conn)
         metrics["stages"]["ensure_tables"] = time.time() - stage_start
         
+        # ─────────────────────────────────────────────────────────────────
+        # STAGE 5b: Sync dim_machine
+        # ─────────────────────────────────────────────────────────────────
+        stage_start = time.time()
+        dim_count = _sync_dim_machine(conn, args.catalog, args.schema)
+        metrics["dim_machine_rows"] = dim_count
+        metrics["stages"]["sync_dim_machine"] = time.time() - stage_start
+
         # ─────────────────────────────────────────────────────────────────
         # STAGE 6: Upsert Rows
         # ─────────────────────────────────────────────────────────────────
