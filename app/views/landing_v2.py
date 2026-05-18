@@ -18,7 +18,10 @@ def _slide_image(filename: str, caption: str | None = None):
     """Render a slide image with optional caption, scaled to full width."""
     path = os.path.join(SLIDES_DIR, filename)
     if os.path.exists(path):
-        st.image(path, use_container_width=True, caption=caption)
+        try:
+            st.image(path, use_container_width=True, caption=caption)
+        except TypeError:
+            st.image(path, use_column_width=True, caption=caption)
     else:
         st.warning(f"Image not found: {filename}")
 

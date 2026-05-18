@@ -4,7 +4,7 @@ bundle:
 include:
   - resources/pipelines.yml
   - resources/jobs.yml
-  # - resources/apps.yml  # temporarily excluded — app was deleted from workspace
+  # - resources/apps.yml  # temp-disabled 2026-05-18: Azure workspace at 200-app cap; re-enable after cleanup
 
 variables:
   catalog:
@@ -91,9 +91,15 @@ variables:
   lakebase_resource_name:
     description: Friendly autoscaling Lakebase resource name
     default: iot-demo-lakebase
+  lakebase_host:
+    description: Autoscaling Lakebase endpoint hostname
+    default: "ep-young-recipe-e15ng18y.database.eastus2.azuredatabricks.net"
+  lakebase_endpoint:
+    description: Full Autoscaling Lakebase endpoint path for credential generation
+    default: "projects/iot-demo-lakebase/branches/production/endpoints/primary"
   lakebase_db_host:
     description: Lakebase endpoint host captured by provisioning
-    default: "instance-d5f031cb-a61c-42d6-ac0a-c1c36d1f54dd.database.azuredatabricks.net"
+    default: "ep-young-recipe-e15ng18y.database.eastus2.azuredatabricks.net"
   lakebase_db_port:
     description: Lakebase database port
     default: "5432"
@@ -129,7 +135,7 @@ variables:
     default: https://adb-984752964297111.11.azuredatabricks.net/embed/dashboardsv3/01f11755a5c31ce2ae7e3f1c7a514115?o=984752964297111
   app_genie_space_id:
     description: Genie space id for native app chat
-    default: "01f117215c6112179fbec6269981f89b"
+    default: "01f1337e71ab1bdd8cb044b8576e5073"
 
 targets:
   dev:
@@ -139,7 +145,8 @@ targets:
       root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     variables:
       catalog: welch
-      schema: iot_demo_dev
+      schema: iot_demo
+      iothub_bridge_checkpoint_path: "/Volumes/welch/iot_demo/checkpoints/iothub-zerobus"
   prod:
     mode: production
     workspace:
@@ -147,3 +154,35 @@ targets:
     variables:
       catalog: welch
       schema: iot_demo
+
+  # GCP workspace (8259561815486823.3.gcp.databricks.com) — pete.welch admin, serverless-only
+  # Deploy scope on GCP: DLT pipeline + Streamlit app + iot_orchestration ML job.
+  # Skipped (Azure-coupled): iothub_to_zerobus_autorun (classic cluster + Azure IoT Hub source),
+  #   iot_lakebase_sync (no GCP Lakebase yet), iot_views_and_dashboard (no dashboard_id yet).
+  gcp:
+    mode: development
+    workspace:
+      host: https://8259561815486823.3.gcp.databricks.com
+      profile: gcp-mfg
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: iot_zerobus_demo
+      schema: iot_demo
+      sql_warehouse_id: "83d5b2b6db08d0b8"
+      zerobus_workspace_id: "8259561815486823"
+      zerobus_workspace_url: https://8259561815486823.3.gcp.databricks.com
+      zerobus_workspace_region: us-central1
+      zerobus_ingest_url: https://8259561815486823.zerobus.us-central1.gcp.databricks.com
+      lakebase_host: "TBD"
+      lakebase_endpoint: "TBD"
+      lakebase_db_host: "TBD"
+      lakebase_jdbc_url: "TBD"
+      app_dashboard_url: "TBD"
+      # Serverless-compatible: available-now trigger inside a continuous job
+      iothub_bridge_run_mode: "available-now"
+      iothub_bridge_starting_offsets: "earliest"
+      iothub_bridge_processing_time: "10 seconds"
+      iothub_bridge_checkpoint_path: "/Volumes/iot_zerobus_demo/iot_demo/checkpoints/iothub-zerobus"
+      app_genie_space_id: "01f14a131fd617a08e3cdd8369996e35"
+      genie_space_id: "01f14a131fd617a08e3cdd8369996e35"
+      dashboard_id: "01f14a131fd617a08e3cdd8369996e35"

@@ -126,7 +126,14 @@ def ensure_stream(
         if not resolved_ingest_url.startswith(("http://", "https://")):
             resolved_ingest_url = f"https://{resolved_ingest_url}"
     else:
-        resolved_ingest_url = f"https://{workspace_id}.zerobus.{workspace_region}.azuredatabricks.net"
+        host = urlparse(normalized_workspace_url).netloc.lower()
+        if "gcp.databricks.com" in host:
+            zerobus_suffix = "gcp.databricks.com"
+        elif "azuredatabricks.net" in host:
+            zerobus_suffix = "azuredatabricks.net"
+        else:
+            zerobus_suffix = "cloud.databricks.com"
+        resolved_ingest_url = f"https://{workspace_id}.zerobus.{workspace_region}.{zerobus_suffix}"
     LOGGER.info("Using Zerobus ingest endpoint: %s", resolved_ingest_url)
     LOGGER.info("Using workspace URL for UC auth: %s", normalized_workspace_url)
     sdk = ZerobusSdk(resolved_ingest_url, unity_catalog_url=normalized_workspace_url)

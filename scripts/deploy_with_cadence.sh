@@ -86,6 +86,15 @@ if [[ -z "${APP_GENIE_SPACE_ID:-}" || "${APP_GENIE_SPACE_ID:-}" == "__AUTO__" ]]
 fi
 echo "==> Using APP_GENIE_SPACE_ID=${APP_GENIE_SPACE_ID}"
 
+if [[ -n "${LAKEBASE_DB_HOST:-}" ]]; then
+  echo "==> Injecting LAKEBASE_DB_HOST into app/app.yml"
+  if [[ "$(uname)" == "Darwin" ]]; then
+    sed -i '' "s|^\\(  - name: LAKEBASE_DB_HOST\\)$|\\1|; /^  - name: LAKEBASE_DB_HOST$/{ n; s|value: .*|value: \"${LAKEBASE_DB_HOST}\"|; }" app/app.yml
+  else
+    sed -i "s|^\\(  - name: LAKEBASE_DB_HOST\\)$|\\1|; /^  - name: LAKEBASE_DB_HOST$/{ n; s|value: .*|value: \"${LAKEBASE_DB_HOST}\"|; }" app/app.yml
+  fi
+fi
+
 echo "==> Deploying bundle with cadence mode: $MODE"
 databricks bundle deploy -t "$TARGET" \
   --var "dashboard_mode=$MODE" \
@@ -101,5 +110,99 @@ databricks bundle deploy -t "$TARGET" \
   --var "lakebase_jdbc_url=${LAKEBASE_JDBC_URL:-}" \
   --var "genie_space_id=${APP_GENIE_SPACE_ID}" \
   --var "app_genie_space_id=${APP_GENIE_SPACE_ID}"
+
+echo "==> Ensuring DLT pipeline is set to continuous mode"
+PIPELINE_ID="$(databricks bundle summary -t "$TARGET" --output json 2>/dev/null \
+  | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get('resources',{}).get('pipelines',{}).get('iot_telemetry_medallion',{}).get('id',''))")"
+if [[ -n "$PIPELINE_ID" ]]; then
+  databricks pipelines get "$PIPELINE_ID" --output json 2>/dev/null \
+    | python3 -c "
+import json, sys, subprocess
+d = json.loads(sys.stdin.read().strip())
+spec = d.get('spec', {})
+spec['continuous'] = True
+result = subprocess.run(
+    ['databricks', 'api', 'put', '/api/2.0/pipelines/$PIPELINE_ID', '--json', json.dumps(spec)],
+    capture_output=True, text=True
+)
+if result.returncode == 0:
+    print('  Pipeline set to continuous mode.')
+else:
+    print(f'  Warning: failed to set continuous mode: {result.stderr}')
+"
+fi
+
+echo "==> Unpausing table update trigger on orchestration job"
+ORCH_JOB_ID="$(databricks bundle summary -t "$TARGET" --output json 2>/dev/null \
+  | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get('resources',{}).get('jobs',{}).get('iot_orchestration',{}).get('id',''))")"
+if [[ -n "$ORCH_JOB_ID" ]]; then
+  databricks api get "/api/2.1/jobs/get?job_id=$ORCH_JOB_ID" 2>/dev/null \
+    | python3 -c "
+import json, sys, subprocess
+d = json.loads(sys.stdin.read())
+trigger = d.get('settings', {}).get('trigger', {})
+if trigger and trigger.get('pause_status') == 'PAUSED':
+    trigger['pause_status'] = 'UNPAUSED'
+    payload = json.dumps({'job_id': $ORCH_JOB_ID, 'new_settings': {'trigger': trigger}})
+    result = subprocess.run(
+        ['databricks', 'api', 'post', '/api/2.1/jobs/update', '--json', payload],
+        capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        print('  Orchestration trigger unpaused.')
+    else:
+        print(f'  Warning: failed to unpause trigger: {result.stderr}')
+else:
+    print('  Orchestration trigger already unpaused.')
+"
+fi
+
+echo "==> Unpausing schedule on views & dashboard job"
+VIEWS_JOB_ID="$(databricks bundle summary -t "$TARGET" --output json 2>/dev/null \
+  | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get('resources',{}).get('jobs',{}).get('iot_views_and_dashboard',{}).get('id',''))")"
+if [[ -n "$VIEWS_JOB_ID" ]]; then
+  databricks api get "/api/2.1/jobs/get?job_id=$VIEWS_JOB_ID" 2>/dev/null \
+    | python3 -c "
+import json, sys, subprocess
+d = json.loads(sys.stdin.read())
+schedule = d.get('settings', {}).get('schedule', {})
+if schedule and schedule.get('pause_status') == 'PAUSED':
+    schedule['pause_status'] = 'UNPAUSED'
+    payload = json.dumps({'job_id': $VIEWS_JOB_ID, 'new_settings': {'schedule': schedule}})
+    result = subprocess.run(
+        ['databricks', 'api', 'post', '/api/2.1/jobs/update', '--json', payload],
+        capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        print('  Views & dashboard schedule unpaused.')
+    else:
+        print(f'  Warning: failed to unpause schedule: {result.stderr}')
+else:
+    print('  Views & dashboard schedule already unpaused.')
+"
+fi
+
+echo "==> Applying RemoveAfter tags to Unity Catalog resources"
+REMOVE_AFTER="2027-12-31"
+CATALOG="welch"
+SCHEMA="iot_demo_dev"
+for STMT in \
+  "ALTER CATALOG ${CATALOG} SET TAGS ('RemoveAfter' = '${REMOVE_AFTER}')" \
+  "ALTER SCHEMA ${CATALOG}.${SCHEMA} SET TAGS ('RemoveAfter' = '${REMOVE_AFTER}')"; do
+  databricks api post /api/2.0/sql/statements --json "{
+    \"warehouse_id\": \"148ccb90800933a1\",
+    \"statement\": \"${STMT}\",
+    \"wait_timeout\": \"30s\"
+  }" 2>/dev/null | python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+state = d.get('status', {}).get('state', '')
+if state == 'SUCCEEDED':
+    print(f'  OK: ${STMT%% *}')
+else:
+    err = d.get('status', {}).get('error', {}).get('message', state)
+    print(f'  Warning: {err}')
+" || true
+done
 
 echo "deploy with cadence phase complete."

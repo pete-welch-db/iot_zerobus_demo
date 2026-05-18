@@ -56,7 +56,7 @@ echo "==> Running simulator"
   --risky-device-fraction "$RISKY_DEVICE_FRACTION"
 
 echo "==> Triggering post-medallion orchestration"
-databricks bundle run -t "$TARGET" iot_zerobus_orchestration --no-wait
+databricks bundle run -t "$TARGET" iot_orchestration --no-wait
 
 echo "==> Fleet freshness check (last 5 minutes)"
 sql_query "SELECT machine_id, state, telemetry_lag_ms, ml_lag_ms, prob_fault_next_5m, last_event_time FROM $CATALOG.$SCHEMA.vw_machine_current_status WHERE last_event_time >= current_timestamp() - INTERVAL 5 MINUTES ORDER BY telemetry_lag_ms ASC, last_event_time DESC LIMIT 50"

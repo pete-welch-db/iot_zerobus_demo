@@ -1,8 +1,8 @@
 -- Configure catalog/schema for your workspace before execution.
 -- Example:
 -- USE CATALOG welch;
--- CREATE SCHEMA IF NOT EXISTS iot_demo_dev;
--- USE SCHEMA iot_demo_dev;
+-- CREATE SCHEMA IF NOT EXISTS iot_demo;
+-- USE SCHEMA iot_demo;
 
 CREATE OR REPLACE VIEW vw_machine_telemetry_live AS
 SELECT

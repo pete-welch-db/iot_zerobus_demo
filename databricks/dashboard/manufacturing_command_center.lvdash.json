@@ -31,8 +31,8 @@
         "  s.pressure_bar,\n",
         "  s.flow_rate_lpm\n",
         "FROM\n",
-        "  welch.iot_demo_dev.vw_machine_current_status s\n",
-        "    LEFT JOIN welch.iot_demo_dev.dim_machine d\n",
+        "  welch.iot_demo.vw_machine_current_status s\n",
+        "    LEFT JOIN welch.iot_demo.dim_machine d\n",
         "      ON s.machine_id = d.machine_id"
       ]
     },
@@ -53,8 +53,8 @@
         "  t.humidity_pct,\n",
         "  t.throughput_cpm\n",
         "FROM\n",
-        "  welch.iot_demo_dev.vw_machine_telemetry_live t\n",
-        "    LEFT JOIN welch.iot_demo_dev.dim_machine d\n",
+        "  welch.iot_demo.vw_machine_telemetry_live t\n",
+        "    LEFT JOIN welch.iot_demo.dim_machine d\n",
         "      ON t.machine_id = d.machine_id"
       ]
     },
@@ -80,8 +80,8 @@
         "  h.prob_fault_next_24h,\n",
         "  h.prob_fault_next_7d\n",
         "FROM\n",
-        "  welch.iot_demo_dev.vw_machine_health h\n",
-        "    LEFT JOIN welch.iot_demo_dev.dim_machine d\n",
+        "  welch.iot_demo.vw_machine_health h\n",
+        "    LEFT JOIN welch.iot_demo.dim_machine d\n",
         "      ON h.machine_id = d.machine_id"
       ]
     },
@@ -89,28 +89,28 @@
       "name": "ds_device_drilldown",
       "displayName": "Device Drill-Down",
       "queryLines": [
-        "SELECT s.machine_id, d.line_name, s.state, s.last_event_time, DATE_TRUNC('HOUR', s.last_event_time) AS last_event_hour, s.telemetry_lag_ms, s.ml_lag_ms, s.temp_c, s.vibration_mm_s, s.throughput_cpm, s.rpm, s.current_amps, s.humidity_pct, s.load_pct, s.power_kw, s.power_factor, s.voltage_v, s.pressure_bar, s.flow_rate_lpm, s.oee_pct, s.anomaly_score, s.prob_fault_next_5m, s.prob_fault_next_1h, s.prob_fault_next_24h, s.prob_fault_next_7d FROM welch.iot_demo_dev.vw_machine_current_status s LEFT JOIN welch.iot_demo_dev.dim_machine d ON s.machine_id = d.machine_id"
+        "SELECT s.machine_id, d.line_name, s.state, s.last_event_time, DATE_TRUNC('HOUR', s.last_event_time) AS last_event_hour, s.telemetry_lag_ms, s.ml_lag_ms, s.temp_c, s.vibration_mm_s, s.throughput_cpm, s.rpm, s.current_amps, s.humidity_pct, s.load_pct, s.power_kw, s.power_factor, s.voltage_v, s.pressure_bar, s.flow_rate_lpm, s.oee_pct, s.anomaly_score, s.prob_fault_next_5m, s.prob_fault_next_1h, s.prob_fault_next_24h, s.prob_fault_next_7d FROM welch.iot_demo.vw_machine_current_status s LEFT JOIN welch.iot_demo.dim_machine d ON s.machine_id = d.machine_id"
       ]
     },
     {
       "name": "ds_metric_oee",
       "displayName": "Metric OEE",
       "queryLines": [
-        "SELECT `Machine` AS machine_id, `Window Hour` AS window_hour, MEASURE(`OEE Pct`) AS oee_pct, MEASURE(`Availability Pct`) AS availability_pct, MEASURE(`Performance Pct`) AS performance_pct, MEASURE(`Quality Pct`) AS quality_pct FROM welch.iot_demo_dev.mv_machine_oee GROUP BY ALL"
+        "SELECT `Machine` AS machine_id, `Window Hour` AS window_hour, MEASURE(`OEE Pct`) AS oee_pct, MEASURE(`Availability Pct`) AS availability_pct, MEASURE(`Performance Pct`) AS performance_pct, MEASURE(`Quality Pct`) AS quality_pct FROM welch.iot_demo.mv_machine_oee GROUP BY ALL"
       ]
     },
     {
       "name": "ds_metric_risk",
       "displayName": "Metric Risk",
       "queryLines": [
-        "SELECT `Machine` AS machine_id, `Window Date` AS window_date, MEASURE(`Avg Fault Risk 5m`) AS risk_5m, MEASURE(`Avg Fault Risk 1h`) AS risk_1h, MEASURE(`Avg Fault Risk 24h`) AS risk_24h, MEASURE(`Avg Fault Risk 7d`) AS risk_7d, MEASURE(`High Risk Windows`) AS high_risk_windows FROM welch.iot_demo_dev.mv_machine_risk GROUP BY ALL"
+        "SELECT `Machine` AS machine_id, `Window Date` AS window_date, MEASURE(`Avg Fault Risk 5m`) AS risk_5m, MEASURE(`Avg Fault Risk 1h`) AS risk_1h, MEASURE(`Avg Fault Risk 24h`) AS risk_24h, MEASURE(`Avg Fault Risk 7d`) AS risk_7d, MEASURE(`High Risk Windows`) AS high_risk_windows FROM welch.iot_demo.mv_machine_risk GROUP BY ALL"
       ]
     },
     {
       "name": "ds_metric_freshness",
       "displayName": "Metric Freshness",
       "queryLines": [
-        "SELECT `Machine` AS machine_id, MEASURE(`Avg Telemetry Lag Ms`) AS avg_telemetry_lag_ms, MEASURE(`Avg ML Lag Ms`) AS avg_ml_lag_ms, MEASURE(`Max Telemetry Lag Ms`) AS max_telemetry_lag_ms, MEASURE(`Max ML Lag Ms`) AS max_ml_lag_ms FROM welch.iot_demo_dev.mv_machine_freshness GROUP BY ALL"
+        "SELECT `Machine` AS machine_id, MEASURE(`Avg Telemetry Lag Ms`) AS avg_telemetry_lag_ms, MEASURE(`Avg ML Lag Ms`) AS avg_ml_lag_ms, MEASURE(`Max Telemetry Lag Ms`) AS max_telemetry_lag_ms, MEASURE(`Max ML Lag Ms`) AS max_ml_lag_ms FROM welch.iot_demo.mv_machine_freshness GROUP BY ALL"
       ]
     },
     {
@@ -138,8 +138,8 @@
         "  b.state,\n",
         "  b.fault_code\n",
         "FROM\n",
-        "  welch.iot_demo_dev.bronze_iot_telemetry b\n",
-        "    LEFT JOIN welch.iot_demo_dev.dim_machine d\n",
+        "  welch.iot_demo.bronze_iot_telemetry b\n",
+        "    LEFT JOIN welch.iot_demo.dim_machine d\n",
         "      ON b.machine_id = d.machine_id\n",
         "WHERE\n",
         "  b.ts IS NOT NULL\n",
@@ -199,8 +199,8 @@
         "  b.flow_rate_lpm,\n",
         "  b.throughput_cpm\n",
         "FROM\n",
-        "  welch.iot_demo_dev.bronze_iot_telemetry b\n",
-        "    LEFT JOIN welch.iot_demo_dev.dim_machine d\n",
+        "  welch.iot_demo.bronze_iot_telemetry b\n",
+        "    LEFT JOIN welch.iot_demo.dim_machine d\n",
         "      ON b.machine_id = d.machine_id\n",
         "WHERE\n",
         "  b.ts IS NOT NULL\n",

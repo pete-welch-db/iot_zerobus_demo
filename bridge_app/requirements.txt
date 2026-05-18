@@ -1,0 +1,3 @@
+azure-eventhub>=5.11.0
+databricks-zerobus-ingest-sdk
+databricks-sdk

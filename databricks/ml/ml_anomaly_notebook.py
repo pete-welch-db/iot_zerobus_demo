@@ -223,7 +223,8 @@ with mlflow.start_run(run_name=f"iot_anomaly_pipeline_{inference_mode}"):
             .drop("_rn")
         )
         latest_df.createOrReplaceTempView("_anomaly_latest")
-        spark.sql(f"CREATE TABLE IF NOT EXISTS {output_table} LIKE _anomaly_latest")
+        if not spark.catalog.tableExists(output_table):
+            latest_df.limit(0).write.format("delta").saveAsTable(output_table)
         spark.sql(f"""
             MERGE INTO {output_table} AS target
             USING _anomaly_latest AS source

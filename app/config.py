@@ -48,6 +48,7 @@ class AppConfig:
     dashboard_url: str
     refresh_seconds: int
     lakebase_instance_name: str
+    lakebase_host: str
     lakebase_db: str
     lakebase_port: int
 
@@ -71,7 +72,7 @@ def load_config() -> AppConfig:
         workspace_host=workspace_host,
         token=token,
         catalog=os.getenv("APP_CATALOG", "welch"),
-        schema=os.getenv("APP_SCHEMA", "iot_demo_dev"),
+        schema=os.getenv("APP_SCHEMA", "iot_demo"),
         warehouse_id=warehouse_id,
         sql_http_path=sql_http_path,
         genie_space_id=os.getenv("APP_GENIE_SPACE_ID", "__AUTO__"),
@@ -81,6 +82,7 @@ def load_config() -> AppConfig:
         ),
         refresh_seconds=int(os.getenv("APP_REFRESH_SECONDS", "15")),
         lakebase_instance_name=os.getenv("LAKEBASE_INSTANCE_NAME", ""),
+        lakebase_host=os.getenv("LAKEBASE_DB_HOST", ""),
         lakebase_db=os.getenv("LAKEBASE_DB_NAME", "iot_demo"),
         lakebase_port=int(os.getenv("LAKEBASE_DB_PORT", "5432")),
     )

@@ -49,7 +49,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 CATALOG = "welch"
-SCHEMA = "iot_demo_dev"
+SCHEMA = "iot_demo"
 LAKEBASE_INSTANCE = "iot-demo-lakebase"
 LOGICAL_DATABASE = "iot_demo"
 
@@ -90,6 +90,12 @@ def parse_args() -> argparse.Namespace:
         "--status",
         action="store_true",
         help="Check sync status of existing synced table and exit.",
+    )
+    parser.add_argument(
+        "--host",
+        default="",
+        help="Explicit Lakebase Postgres host (skips SDK get_database_instance lookup). "
+             "Required for Autoscaling tier where the Provisioned SDK call is unavailable.",
     )
     return parser.parse_args()
 
@@ -148,6 +154,14 @@ def create_synced_table(w: WorkspaceClient, args: argparse.Namespace) -> None:
     logger.info(f"Created synced table: {result.name}")
 
 
+def _resolve_host(w: WorkspaceClient, args: argparse.Namespace) -> str:
+    """Return the Lakebase Postgres host, preferring the explicit --host flag."""
+    if args.host:
+        return args.host
+    instance = w.database.get_database_instance(name=args.lakebase_instance)
+    return instance.read_write_dns
+
+
 def delete_synced_table(w: WorkspaceClient, args: argparse.Namespace) -> None:
     """Delete the synced table and drop the Lakebase Postgres table."""
     import uuid
@@ -156,7 +170,6 @@ def delete_synced_table(w: WorkspaceClient, args: argparse.Namespace) -> None:
     schema = args.schema
     dest_name = f"{catalog}.{schema}.machine_current_status"
 
-    # Delete the UC synced table definition
     logger.info(f"Deleting synced table: {dest_name}")
     try:
         w.database.delete_synced_database_table(name=dest_name)
@@ -164,25 +177,23 @@ def delete_synced_table(w: WorkspaceClient, args: argparse.Namespace) -> None:
     except Exception as e:
         logger.warning(f"  Could not delete synced table: {e}")
 
-    # Drop the Postgres table in Lakebase
     logger.info("Dropping Lakebase Postgres table...")
     try:
         cred = w.database.generate_database_credential(
             request_id=str(uuid.uuid4()),
             instance_names=[args.lakebase_instance],
         )
-        instance = w.database.get_database_instance(name=args.lakebase_instance)
+        host = _resolve_host(w, args)
 
         import psycopg
         conninfo = (
-            f"host={instance.read_write_dns} port=5432 "
+            f"host={host} port=5432 "
             f"dbname={args.logical_database} "
             f"user={w.current_user.me().user_name} "
             f"password={cred.token} sslmode=require"
         )
         with psycopg.connect(conninfo) as conn:
             with conn.cursor() as cur:
-                # Try both possible schemas
                 for pg_schema in [args.schema, "public"]:
                     try:
                         cur.execute(
@@ -224,11 +235,11 @@ def cleanup_old_tables(w: WorkspaceClient, args: argparse.Namespace) -> None:
         request_id=str(uuid.uuid4()),
         instance_names=[args.lakebase_instance],
     )
-    instance = w.database.get_database_instance(name=args.lakebase_instance)
+    host = _resolve_host(w, args)
 
     import psycopg
     conninfo = (
-        f"host={instance.read_write_dns} port=5432 "
+        f"host={host} port=5432 "
         f"dbname={args.logical_database} "
         f"user={w.current_user.me().user_name} "
         f"password={cred.token} sslmode=require"

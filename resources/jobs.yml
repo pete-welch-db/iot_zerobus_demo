@@ -6,14 +6,15 @@ resources:
       timeout_seconds: 0
       queue:
         enabled: true
+      # Continuous job: auto-restart after each available-now sweep completes.
+      # Gives serverless-compatible "continuous" streaming without infinite-trigger errors.
+      continuous:
+        pause_status: UNPAUSED
       tasks:
         - task_key: bridge_iothub_to_zerobus
           timeout_seconds: 0
-          max_retries: 5
-          min_retry_interval_millis: 60000
-          retry_on_timeout: true
           spark_python_task:
-            python_file: ../databricks/ingestion/iothub_to_zerobus_bridge.py
+            python_file: ../databricks/ingestion/iothub_to_zerobus_bridge_py.py
             parameters:
               - --catalog
               - ${var.catalog}
@@ -49,34 +50,27 @@ resources:
               - ${var.iothub_bridge_max_records_per_batch}
               - --realtime-checkpoint-interval
               - ${var.iothub_bridge_realtime_checkpoint_interval}
-          new_cluster:
-            spark_version: 16.4.x-scala2.12
-            node_type_id: Standard_D4ds_v5
-            num_workers: 0
-            data_security_mode: SINGLE_USER
-            spark_conf:
-              spark.databricks.cluster.profile: singleNode
-              spark.master: local[*]
-              spark.databricks.streaming.realTimeMode.enabled: "true"
-            custom_tags:
-              ResourceClass: SingleNode
-            azure_attributes:
-              availability: ON_DEMAND_AZURE
-              first_on_demand: 1
-          libraries:
-            - pypi:
-                package: databricks-zerobus-ingest-sdk
+          environment_key: bridge
+      environments:
+        - environment_key: bridge
+          spec:
+            environment_version: "4"
+            dependencies:
+              - databricks-zerobus-ingest-sdk
+              - azure-eventhub
+              - databricks-sdk
 
     iot_orchestration:
       name: iot_orchestration
+      trigger:
+        table_update:
+          table_names:
+            - ${var.catalog}.${var.schema}.silver_machine_telemetry
+          condition: ALL_UPDATED
+          min_time_between_triggers_seconds: 300
+          wait_after_last_change_seconds: 60
       tasks:
-        - task_key: DLT_Pipeline_Continuous
-          pipeline_task:
-            pipeline_id: ${resources.pipelines.iot_telemetry_medallion.id}
-            full_refresh: false
         - task_key: ML_Anomaly_Scoring
-          depends_on:
-            - task_key: DLT_Pipeline_Continuous
           spark_python_task:
             python_file: ../databricks/ml/ml_anomaly_notebook.py
             parameters:
@@ -88,8 +82,6 @@ resources:
               - batch
           environment_key: Default
         - task_key: ML_Fault_Prediction
-          depends_on:
-            - task_key: DLT_Pipeline_Continuous
           spark_python_task:
             python_file: ../databricks/ml/ml_state_prediction_notebook.py
             parameters:
@@ -100,10 +92,57 @@ resources:
               - --inference-mode
               - batch
           environment_key: Default
+      queue:
+        enabled: true
+      environments:
+        - environment_key: Default
+          spec:
+            environment_version: "4"
+      performance_target: PERFORMANCE_OPTIMIZED
+
+    iot_lakebase_sync:
+      name: iot_lakebase_sync
+      trigger:
+        table_update:
+          table_names:
+            - ${var.catalog}.${var.schema}.gold_machine_latest_status
+          condition: ALL_UPDATED
+          min_time_between_triggers_seconds: 61
+          wait_after_last_change_seconds: 61
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: sync_to_lakebase
+          spark_python_task:
+            python_file: ../databricks/lakebase/lakebase_autoscaling_sync.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+              - --lakebase-host
+              - ${var.lakebase_host}
+              - --lakebase-endpoint
+              - ${var.lakebase_endpoint}
+          environment_key: LakebaseSync
+      queue:
+        enabled: true
+      environments:
+        - environment_key: LakebaseSync
+          spec:
+            environment_version: "4"
+            dependencies:
+              - psycopg[binary]
+      performance_target: PERFORMANCE_OPTIMIZED
+
+    iot_views_and_dashboard:
+      name: iot_views_and_dashboard
+      schedule:
+        quartz_cron_expression: "0 */2 * * * ?"
+        timezone_id: "UTC"
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
+      tasks:
         - task_key: Apply_Semantic_Views
-          depends_on:
-            - task_key: ML_Anomaly_Scoring
-            - task_key: ML_Fault_Prediction
           spark_python_task:
             python_file: ../databricks/semantic/apply_semantic_views.py
             parameters:

@@ -11,6 +11,26 @@ from data_access import DataClients
 from views import freshness
 
 
+@st.cache_data(ttl=5, show_spinner=False)
+def _fetch_machines(_clients) -> pd.DataFrame:
+    return _clients.query_lakebase_machines()
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def _fetch_status_summary(_clients) -> pd.DataFrame:
+    return _clients.query_lakebase_status()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def _fetch_latency_stats(_clients, machine_ids, states, line_names, minutes: int) -> pd.DataFrame:
+    return _clients.query_latency_stats(
+        machine_ids=list(machine_ids) if machine_ids else None,
+        states=list(states) if states else None,
+        line_names=list(line_names) if line_names else None,
+        minutes=minutes,
+    )
+
+
 def _fmt_ts(val) -> str:
     """Format a timestamp value for compact display (America/Detroit already applied upstream)."""
     if val is None or (isinstance(val, float) and pd.isna(val)):
@@ -257,7 +277,7 @@ def render_summary(clients: DataClients) -> None:
         st.info("Lakebase is not configured for this runtime.")
         return
     try:
-        df = clients.query_lakebase_status()
+        df = _fetch_status_summary(clients)
     except Exception as exc:
         st.warning(f"Lakebase summary unavailable: {exc}")
         return
@@ -316,7 +336,7 @@ def render(clients: DataClients | None = None) -> None:
         return
 
     try:
-        df = clients.query_lakebase_machines()
+        df = _fetch_machines(clients)
     except Exception as exc:
         st.error(f"Failed to query Lakebase: {exc}")
         return
@@ -408,11 +428,12 @@ def render(clients: DataClients | None = None) -> None:
     # ── Pipeline latency stats (from vw_pipeline_latency) ───────────
     try:
         machine_filter = list(filtered["machine_id"].unique()) if shown <= 20 else None
-        lat_df = clients.query_latency_stats(
-            machine_ids=machine_filter,
-            states=sel_states if sel_states else None,
-            line_names=sel_lines if sel_lines else None,
-            minutes=10,
+        lat_df = _fetch_latency_stats(
+            clients,
+            tuple(machine_filter) if machine_filter else None,
+            tuple(sel_states) if sel_states else None,
+            tuple(sel_lines) if sel_lines else None,
+            10,
         )
         if not lat_df.empty:
             fleet_d2h = lat_df["avg_d2h_ms"].mean()
@@ -537,10 +558,15 @@ def render(clients: DataClients | None = None) -> None:
 
             btn_c1, btn_c2 = st.columns(2)
             with btn_c1:
-                ai_generate = st.form_submit_button(
-                    "Generate Description with AI",
-                    icon=":material/auto_awesome:",
-                )
+                try:
+                    ai_generate = st.form_submit_button(
+                        "Generate Description with AI",
+                        icon=":material/auto_awesome:",
+                    )
+                except TypeError:
+                    ai_generate = st.form_submit_button(
+                        "Generate Description with AI",
+                    )
             with btn_c2:
                 submitted = st.form_submit_button(
                     "Submit Service Request",

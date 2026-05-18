@@ -1,7 +1,7 @@
 -- Manufacturing Command Center dashboard query pack (multi-horizon + filter-friendly).
 -- Set catalog/schema before running:
 -- USE CATALOG welch;
--- USE SCHEMA iot_demo_dev;
+-- USE SCHEMA iot_demo;
 --
 -- Parameter guidance:
 --   {{start_ts}} and {{end_ts}} should represent the selected time window.

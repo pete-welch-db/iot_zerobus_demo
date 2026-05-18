@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -48,26 +49,54 @@ class LakebaseConnectionFactory:
     the Databricks SDK, so expired credentials are never reused.
     """
 
-    def __init__(self, instance_name: str, db_name: str, port: int = 5432):
+    # OAuth tokens issued by Lakebase last ~1 hour; refresh ~10 min before expiry.
+    _TOKEN_TTL_SECONDS = 3000
+
+    def __init__(self, instance_name: str, db_name: str, port: int = 5432, host: str = ""):
         self._w = WorkspaceClient()
         self._instance_name = instance_name
         self._db_name = db_name
         self._port = port
+        self._is_autoscaling = instance_name.startswith("projects/")
+        self._cached_token: Optional[str] = None
+        self._cached_token_at: float = 0.0
 
-        instance = self._w.database.get_database_instance(name=instance_name)
-        self._host = instance.read_write_dns
+        if host:
+            self._host = host
+        elif self._is_autoscaling:
+            raise ValueError(
+                "Autoscaling Lakebase requires an explicit host. "
+                "Set LAKEBASE_DB_HOST to the endpoint hostname."
+            )
+        else:
+            instance = self._w.database.get_database_instance(name=instance_name)
+            self._host = instance.read_write_dns
         self._user = self._w.current_user.me().user_name
         logger.info(
-            "Lakebase factory: host=%s user=%s db=%s",
-            self._host, self._user, self._db_name,
+            "Lakebase factory: host=%s user=%s db=%s autoscaling=%s",
+            self._host, self._user, self._db_name, self._is_autoscaling,
         )
 
     def _generate_token(self) -> str:
-        cred = self._w.database.generate_database_credential(
-            request_id=str(uuid.uuid4()),
-            instance_names=[self._instance_name],
-        )
-        return cred.token
+        now = time.monotonic()
+        if self._cached_token and (now - self._cached_token_at) < self._TOKEN_TTL_SECONDS:
+            return self._cached_token
+        if self._is_autoscaling:
+            endpoint = f"{self._instance_name}/branches/production/endpoints/primary"
+            resp = self._w.api_client.do(
+                "POST", "/api/2.0/postgres/credentials",
+                body={"endpoint": endpoint},
+            )
+            token = resp["token"]
+        else:
+            cred = self._w.database.generate_database_credential(
+                request_id=str(uuid.uuid4()),
+                instance_names=[self._instance_name],
+            )
+            token = cred.token
+        self._cached_token = token
+        self._cached_token_at = now
+        return token
 
     @contextmanager
     def connection(self) -> Generator[psycopg.Connection, None, None]:
@@ -98,18 +127,38 @@ class DataClients:
     _table_ref_cache: dict = field(default_factory=dict, init=False, repr=False)
     _sr_table_ensured: bool = field(default=False, init=False, repr=False)
     _ml_cache: Optional[tuple] = field(default=None, init=False, repr=False)  # (monotonic_ts, DataFrame)
+    _sql_conn: Optional[object] = field(default=None, init=False, repr=False)
 
-    def query_sql(self, statement: str, parameters: dict | None = None) -> pd.DataFrame:
-        with dbsql.connect(
+    def _open_sql_conn(self):
+        return dbsql.connect(
             server_hostname=self.config.workspace_host.replace("https://", ""),
             http_path=self.config.sql_http_path,
             access_token=self.config.token,
-        ) as conn:
-            with conn.cursor() as cur:
-                cur.execute(statement, parameters=parameters)
-                rows = cur.fetchall()
-                cols = [d[0] for d in cur.description]
-        return _localize_timestamps(pd.DataFrame(rows, columns=cols))
+        )
+
+    def _get_sql_conn(self):
+        if self._sql_conn is None:
+            self._sql_conn = self._open_sql_conn()
+        return self._sql_conn
+
+    def query_sql(self, statement: str, parameters: dict | None = None) -> pd.DataFrame:
+        # Reuse a single warehouse connection; reconnect once on failure.
+        for attempt in (1, 2):
+            conn = self._get_sql_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(statement, parameters=parameters)
+                    rows = cur.fetchall()
+                    cols = [d[0] for d in cur.description]
+                return _localize_timestamps(pd.DataFrame(rows, columns=cols))
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                self._sql_conn = None
+                if attempt == 2:
+                    raise
 
     def _build_in_clause(self, values: list[str], prefix: str) -> tuple[str, dict]:
         """Build a parameterized IN clause. Returns (sql_fragment, params_dict)."""
@@ -291,6 +340,7 @@ class DataClients:
                 instance_name=self.config.lakebase_instance_name,
                 db_name=self.config.lakebase_db,
                 port=self.config.lakebase_port,
+                host=self.config.lakebase_host,
             )
         return self._lb_factory
 
@@ -514,15 +564,23 @@ class DataClients:
                     clauses.append("machine_id = ANY(%s)")
                     params.append(machine_ids)
                 where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+                count_query = psql.SQL(
+                    "SELECT count(*) FROM {}.{} " + where
+                ).format(psql.Identifier(ref[0]), psql.Identifier(ref[1]))
+                cur.execute(count_query, params)
+                total_count = cur.fetchone()[0]
+
                 query = psql.SQL(
                     "SELECT id, machine_id, priority, request_type, description, "
                     "requestor, status, created_at, updated_at "
-                    "FROM {}.{} " + where + " ORDER BY created_at DESC LIMIT 500"
+                    "FROM {}.{} " + where + " ORDER BY created_at DESC LIMIT 5000"
                 ).format(psql.Identifier(ref[0]), psql.Identifier(ref[1]))
                 cur.execute(query, params)
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
-                return _localize_timestamps(pd.DataFrame(rows, columns=cols))
+                df = _localize_timestamps(pd.DataFrame(rows, columns=cols))
+                df.attrs["total_count"] = total_count
+                return df
 
     def update_service_request_status(self, request_id: str, new_status: str) -> None:
         if not self.lakebase_available():

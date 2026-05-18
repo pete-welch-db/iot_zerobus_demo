@@ -19,13 +19,16 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.logo(str(_DATABRICKS_LOGO), size="large")
+try:
+    st.logo(str(_DATABRICKS_LOGO), size="large")
+except TypeError:
+    st.logo(str(_DATABRICKS_LOGO))
 
 st.markdown(
     """
     <style>
     section.main > div.block-container {
-        padding-top: 1rem !important;
+        padding-top: 2.5rem !important;
     }
     [data-testid="stLogo"] {
         height: auto !important;

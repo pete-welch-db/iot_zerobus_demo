@@ -10,9 +10,9 @@ Uses the serialized_space API (version 2) for atomic updates:
 
 Usage (local):
   python deploy_genie_space.py \
-    --catalog welch --schema iot_demo_dev \
+    --catalog welch --schema iot_demo \
     --warehouse-id 148ccb90800933a1 \
-    --genie-space-id 01f117215c6112179fbec6269981f89b
+    --genie-space-id 01f1337e71ab1bdd8cb044b8576e5073
 
 Usage (Databricks notebook):
   Runs via spark/dbutils context automatically.

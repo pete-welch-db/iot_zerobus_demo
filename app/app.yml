@@ -12,3 +12,27 @@ env:
     value: "true"
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
+  - name: APP_CATALOG
+    value: welch
+  - name: APP_SCHEMA
+    value: iot_demo
+  - name: DATABRICKS_WAREHOUSE_ID
+    value: "148ccb90800933a1"
+  - name: APP_GENIE_SPACE_ID
+    value: "01f1337e71ab1bdd8cb044b8576e5073"
+  - name: APP_DASHBOARD_URL
+    value: "https://adb-984752964297111.11.azuredatabricks.net/embed/dashboardsv3/01f11755a5c31ce2ae7e3f1c7a514115?o=984752964297111"
+  - name: LAKEBASE_INSTANCE_NAME
+    value: "projects/iot-demo-lakebase"
+  - name: LAKEBASE_DB_HOST
+    value: "ep-damp-mud-e1dsz8i1.database.eastus2.azuredatabricks.net"
+  - name: LAKEBASE_DB_NAME
+    value: "iot_demo"
+  - name: LAKEBASE_DB_PORT
+    value: "5432"
+
+resources:
+  - name: sql-warehouse
+    sql_warehouse:
+      id: "148ccb90800933a1"
+      permission: CAN_USE

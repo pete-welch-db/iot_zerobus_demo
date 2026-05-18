@@ -1,0 +1,21 @@
+name: iot-zerobus-bridge
+description: Plain-Python bridge — Azure IoT Hub Event Hubs to GCP Zerobus
+command: ["python", "bridge_app.py"]
+
+env:
+  - name: ZEROBUS_INGEST_URL
+    value: "https://8259561815486823.zerobus.us-central1.gcp.databricks.com"
+  - name: ZEROBUS_WORKSPACE_URL
+    value: "https://8259561815486823.3.gcp.databricks.com"
+  - name: BRONZE_TABLE
+    value: "iot_zerobus_demo.iot_demo.bronze_iot_telemetry"
+  - name: IOTHUB_CONSUMER_GROUP
+    value: "databricks-zerobus-app"
+  - name: SECRET_SCOPE
+    value: "iot_zerobus_demo"
+  - name: SP_CLIENT_ID_KEY
+    value: "zerobus_sp_client_id"
+  - name: SP_CLIENT_SECRET_KEY
+    value: "zerobus_sp_client_secret"
+  - name: IOTHUB_CONN_KEY
+    value: "iothub_eventhubs_connection_string"

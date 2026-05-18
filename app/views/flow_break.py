@@ -5,6 +5,11 @@ import streamlit as st
 from views import freshness
 
 
+@st.cache_data(ttl=10, show_spinner=False)
+def _fetch_signals(_clients) -> pd.DataFrame:
+    return _clients.query_flow_break_signals()
+
+
 def _fmt_ts(val) -> str:
     if val is None or (isinstance(val, float) and pd.isna(val)):
         return "--"
@@ -28,7 +33,7 @@ def render() -> None:
     clients = st.session_state.clients
     st.subheader("Flow Break Risk Command Center")
     try:
-        df = clients.query_flow_break_signals()
+        df = _fetch_signals(clients)
     except Exception as exc:
         st.error(f"Failed to query flow-break signals: {exc}")
         return

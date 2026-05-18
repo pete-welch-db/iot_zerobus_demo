@@ -7,7 +7,7 @@ MACHINE_ID="${MACHINE_ID:-MC-0000}"
 
 echo "==> Resolving job IDs from bundle summary (target=$TARGET)"
 BRIDGE_JOB_ID="$(get_job_id iothub_to_zerobus_autorun || true)"
-ORCHESTRATION_JOB_ID="$(get_job_id iot_zerobus_orchestration || true)"
+ORCHESTRATION_JOB_ID="$(get_job_id iot_orchestration || true)"
 PIPELINE_ID="$(get_pipeline_id iot_telemetry_medallion || true)"
 
 if [[ -z "$BRIDGE_JOB_ID" || -z "$ORCHESTRATION_JOB_ID" || -z "$PIPELINE_ID" ]]; then

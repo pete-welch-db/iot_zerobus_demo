@@ -7,6 +7,16 @@ import streamlit as st
 from data_access import DataClients
 from views import freshness
 
+
+@st.cache_data(ttl=15, show_spinner=False)
+def _fetch_service_requests(_clients) -> pd.DataFrame:
+    return _clients.query_service_requests()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def _fetch_machines_for_sr(_clients) -> pd.DataFrame:
+    return _clients.query_lakebase_machines()
+
 _STATUS_ORDER = ["OPEN", "IN_PROGRESS", "RESOLVED", "CANCELLED"]
 _STATUS_COLORS = {
     "OPEN": "#3182CE",
@@ -166,19 +176,20 @@ def render(clients: DataClients | None = None) -> None:
 
     # ── Fetch all requests (filter client-side for instant interaction) ─
     try:
-        df = clients.query_service_requests()
+        df = _fetch_service_requests(clients)
     except Exception as exc:
         st.error(f"Failed to query service requests: {exc}")
         return
 
     # ── KPI row ─────────────────────────────────────────────────────────
-    total = len(df)
+    total_in_db = df.attrs.get("total_count", len(df))
+    showing = len(df)
     counts = {s: int((df["status"] == s).sum()) if not df.empty else 0 for s in _STATUS_ORDER}
 
     st.markdown(
         '<div class="sr-kpi-row">'
         '<div class="sr-kpi-card">'
-        f'<div class="sr-kpi-value">{total}</div>'
+        f'<div class="sr-kpi-value">{total_in_db:,}</div>'
         '<div class="sr-kpi-label">Total</div></div>'
         + "".join(
             f'<div class="sr-kpi-card">'
@@ -189,6 +200,9 @@ def render(clients: DataClients | None = None) -> None:
         + "</div>",
         unsafe_allow_html=True,
     )
+
+    if showing < total_in_db:
+        st.caption(f"Showing most recent {showing:,} of {total_in_db:,} service requests")
 
     # ── Inline filters ──────────────────────────────────────────────────
     with st.container():
@@ -219,25 +233,26 @@ def render(clients: DataClients | None = None) -> None:
 
     # ── Apply filters ───────────────────────────────────────────────────
     filtered = df.copy()
-    if sel_statuses:
-        filtered = filtered[filtered["status"].isin(sel_statuses)]
-    if sel_priorities:
-        filtered = filtered[filtered["priority"].isin(sel_priorities)]
-    if sel_types:
-        filtered = filtered[filtered["request_type"].isin(sel_types)]
-    if sel_machines:
-        filtered = filtered[filtered["machine_id"].isin(sel_machines)]
+    if not df.empty and "status" in df.columns:
+        if sel_statuses:
+            filtered = filtered[filtered["status"].isin(sel_statuses)]
+        if sel_priorities:
+            filtered = filtered[filtered["priority"].isin(sel_priorities)]
+        if sel_types:
+            filtered = filtered[filtered["request_type"].isin(sel_types)]
+        if sel_machines:
+            filtered = filtered[filtered["machine_id"].isin(sel_machines)]
 
-    sort_col, sort_asc = sort_options[sort_choice]
-    if sort_col == "priority":
-        filtered["_pri_ord"] = filtered["priority"].map(
-            {p: i for i, p in enumerate(_PRIORITY_ORDER)}
-        )
-        filtered = filtered.sort_values("_pri_ord").drop(columns=["_pri_ord"])
-    else:
-        filtered = filtered.sort_values(sort_col, ascending=sort_asc)
+        sort_col, sort_asc = sort_options[sort_choice]
+        if sort_col == "priority":
+            filtered["_pri_ord"] = filtered["priority"].map(
+                {p: i for i, p in enumerate(_PRIORITY_ORDER)}
+            )
+            filtered = filtered.sort_values("_pri_ord").drop(columns=["_pri_ord"])
+        else:
+            filtered = filtered.sort_values(sort_col, ascending=sort_asc)
 
-    st.caption(f"Showing {len(filtered)} of {total} requests")
+    st.caption(f"Showing {len(filtered):,} of {total_in_db:,} requests")
 
     # ── Request cards ───────────────────────────────────────────────────
     if filtered.empty:
@@ -290,7 +305,7 @@ def render(clients: DataClients | None = None) -> None:
     st.markdown("---")
     with st.expander("Create New Service Request", icon=":material/add_circle:"):
         try:
-            machines_df = clients.query_lakebase_machines()
+            machines_df = _fetch_machines_for_sr(clients)
             available_machines = sorted(machines_df["machine_id"].unique().tolist()) if not machines_df.empty else []
         except Exception:
             available_machines = []
@@ -318,10 +333,15 @@ def render(clients: DataClients | None = None) -> None:
 
             btn_c1, btn_c2 = st.columns(2)
             with btn_c1:
-                ai_generate = st.form_submit_button(
-                    "Generate Description with AI",
-                    icon=":material/auto_awesome:",
-                )
+                try:
+                    ai_generate = st.form_submit_button(
+                        "Generate Description with AI",
+                        icon=":material/auto_awesome:",
+                    )
+                except TypeError:
+                    ai_generate = st.form_submit_button(
+                        "Generate Description with AI",
+                    )
             with btn_c2:
                 submitted = st.form_submit_button(
                     "Submit Service Request",
